@@ -9,16 +9,19 @@ import { dirname, resolve } from 'node:path'
 export class ConfigError extends Error {}
 
 export function normalise(config, configPath) {
-  const root = resolve(dirname(configPath), config.projectRoot ?? '.')
+  // Every path in the config is relative to the config file itself — one rule,
+  // and the same answer whether the config sits in the app or beside it.
+  const from = dirname(configPath)
+  const at = (p) => resolve(from, p)
 
   const out = {
     ...config,
-    projectRoot: root,
-    outDir: config.outDir ?? 'appstore',
-    workDir: resolve(root, config.workDir ?? '.shots'),
+    projectRoot: at(config.projectRoot ?? '.'),
+    outDir: at(config.outDir ?? 'appstore'),
+    workDir: at(config.workDir ?? '.shots'),
     apiPort: config.apiPort ?? 8788,
     devices: config.devices ?? ['iphone-6.9', 'iphone-6.5'],
-    api: { fixtures: 'shots/fixtures.mjs', ...(config.api ?? {}) },
+    api: { fixtures: at(config.api?.fixtures ?? 'shots/fixtures.mjs') },
     slides: config.slides ?? [],
   }
 

@@ -62,7 +62,7 @@ async function shoot() {
   }
   const { chosen, rendered } = resolveDevices(config.devices)
 
-  const fixtures = await import(pathToFileURL(resolve(config.projectRoot, config.api.fixtures)).href)
+  const fixtures = await import(pathToFileURL(config.api.fixtures).href)
 
   step('bundling the app for the browser')
   await bundle(config)
@@ -103,7 +103,7 @@ async function shoot() {
       devices: chosen,
       fontCss: await fontCss(config),
       rawDir: resolve(config.workDir, 'raw'),
-      outDir: resolve(config.projectRoot, config.outDir),
+      outDir: config.outDir,
     })
 
     console.log(`\n${written.length} frames in ${config.outDir}/`)

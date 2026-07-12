@@ -13,10 +13,11 @@ const base = {
   screens: [{ id: 'home', module: 'src/app/index.tsx' }],
 }
 
-test('config: fills in the defaults', () => {
+test('config: every path resolves against the config file, not the app', () => {
   const c = normalise(base, CONFIG_PATH)
   assert.equal(c.projectRoot, '/app')
-  assert.equal(c.outDir, 'appstore')
+  assert.equal(c.api.fixtures, '/app/shots/fixtures.mjs')
+  assert.equal(c.outDir, '/app/appstore')
   assert.equal(c.workDir, '/app/.shots')
   assert.equal(c.apiPort, 8788)
   assert.deepEqual(c.devices, ['iphone-6.9', 'iphone-6.5'])
