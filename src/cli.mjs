@@ -92,6 +92,7 @@ async function shoot() {
 
     if (args.includes('--raw')) {
       console.log(`\nraw screens in ${resolve(config.workDir, 'raw')}`)
+      reportUnseeded(server)
       return
     }
 
@@ -107,10 +108,26 @@ async function shoot() {
 
     console.log(`\n${written.length} frames in ${config.outDir}/`)
     for (const f of written) console.log(`  ${f}`)
+    reportUnseeded(server)
   } finally {
     await browser.close()
     server.close()
   }
+}
+
+/**
+ * The API calls no fixture answered. An empty state in a screenshot is usually
+ * one of these, so they are printed rather than swallowed.
+ */
+function reportUnseeded(server) {
+  const unseeded = [...(server.unseeded ?? new Map())]
+  if (!unseeded.length) return
+
+  console.log(`\n${unseeded.length} API route(s) had no fixture and got the fallback:`)
+  for (const [route, count] of unseeded.sort((a, b) => b[1] - a[1])) {
+    console.log(`  ${route}${count > 1 ? `  (×${count})` : ''}`)
+  }
+  console.log(`\nSeed the ones a screen actually reads, in shots/fixtures.mjs.`)
 }
 
 async function fontCss(config) {

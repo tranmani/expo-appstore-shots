@@ -9,7 +9,8 @@
  * screenshots is your header, fed the same options object it gets on device.
  */
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react'
-import { View } from 'react-native'
+import { StyleSheet, Text, View } from 'react-native'
+import { getInsets } from './runtime'
 
 export interface Target {
   /** Route name as the root layout registers it, e.g. `station/[code]`. */
@@ -19,6 +20,8 @@ export interface Target {
   /** Pushed screens draw a back chevron. */
   back?: boolean
   tab?: string
+  /** Header title, when the screen's own layout (not the root one) sets it. */
+  title?: string
 }
 
 let target: Target
@@ -59,6 +62,53 @@ const navigation = {
   isFocused: () => true,
 }
 
+/**
+ * The header React Navigation draws when an app does not replace it: a title,
+ * a back chevron, and whatever `headerRight` renders. Most apps never customise
+ * this, and a screenshot without it looks like a different product.
+ */
+function DefaultHeader({
+  options,
+  back,
+}: {
+  options: Record<string, unknown>
+  back?: unknown
+}) {
+  const insets = getInsets()
+  const style = (options.headerStyle ?? {}) as { backgroundColor?: string }
+  const tint = (options.headerTintColor as string) ?? '#111111'
+  const right = (options.headerRight as ((p: unknown) => ReactNode) | undefined)?.({ tintColor: tint })
+  const left = (options.headerLeft as ((p: unknown) => ReactNode) | undefined)?.({ tintColor: tint })
+
+  return (
+    <View
+      style={[
+        header.wrap,
+        { paddingTop: insets.top, backgroundColor: style.backgroundColor ?? '#FFFFFF' },
+      ]}
+    >
+      <View style={header.bar}>
+        <View style={header.side}>
+          {left ?? (back ? <Text style={[header.chevron, { color: tint }]}>‹</Text> : null)}
+        </View>
+        <Text style={[header.title, { color: tint }]} numberOfLines={1}>
+          {(options.title as string) ?? ''}
+        </Text>
+        <View style={[header.side, header.right]}>{right}</View>
+      </View>
+    </View>
+  )
+}
+
+const header = StyleSheet.create({
+  wrap: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(0,0,0,0.12)' },
+  bar: { minHeight: 44, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
+  side: { minWidth: 64, flexDirection: 'row', alignItems: 'center' },
+  right: { justifyContent: 'flex-end' },
+  chevron: { fontSize: 30, lineHeight: 34, fontWeight: '400' },
+  title: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '600' },
+})
+
 export function Stack({
   screenOptions,
   children,
@@ -67,21 +117,30 @@ export function Stack({
   children?: ReactNode
 }) {
   const own = useDeclared()
-  const options = { ...(registered[target.route] ?? {}), ...own }
-  const header = screenOptions?.header as ((p: Record<string, unknown>) => ReactNode) | undefined
+  const options = {
+    ...(screenOptions ?? {}),
+    ...(registered[target.route] ?? {}),
+    ...(target.title ? { title: target.title } : {}),
+    ...own,
+  }
+  const custom = screenOptions?.header as ((p: Record<string, unknown>) => ReactNode) | undefined
   const Screen = target.component
+
+  const props = {
+    navigation,
+    options,
+    back: target.back ? {} : undefined,
+    route: { name: target.route, params: target.params ?? {} },
+  }
 
   return (
     <View style={{ flex: 1 }}>
       {children}
-      {options.headerShown !== false && header
-        ? header({
-            navigation,
-            options,
-            back: target.back ? {} : undefined,
-            route: { name: target.route, params: target.params ?? {} },
-          })
-        : null}
+      {options.headerShown === false ? null : custom ? (
+        custom(props)
+      ) : (
+        <DefaultHeader options={options} back={props.back} />
+      )}
       <View style={{ flex: 1 }}>
         <Screen {...(target.params ?? {})} />
       </View>

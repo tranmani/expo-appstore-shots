@@ -86,6 +86,7 @@ function entrySource(config, projectRoot) {
     params: ${JSON.stringify(s.params ?? {})},
     back: ${Boolean(s.back)},
     tab: ${s.tab ? JSON.stringify(s.tab) : 'undefined'},
+    title: ${s.title ? JSON.stringify(s.title) : 'undefined'},
   },`,
     )
     .join('\n')

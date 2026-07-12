@@ -49,6 +49,13 @@ export function serve({ port, dist, fixtures }) {
     value,
   }))
 
+  /**
+   * Every API call that no fixture matched. This is the to-do list: a screen
+   * rendering an empty state is almost always a route nobody seeded, and it is
+   * far easier to read it here than to infer it from a blank PNG.
+   */
+  const unseeded = new Map()
+
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://localhost:${port}`)
     const send = (body, status = 200) => {
@@ -87,6 +94,8 @@ export function serve({ port, dist, fixtures }) {
       return send(value)
     }
 
+    const key = `${req.method} ${url.pathname}`
+    unseeded.set(key, (unseeded.get(key) ?? 0) + 1)
     return send(fixtures.fallback ?? {})
   })
 
@@ -106,7 +115,10 @@ export function serve({ port, dist, fixtures }) {
   }
 
   return new Promise((ready) => {
-    server.listen(port, () => ready(server))
+    server.listen(port, () => {
+      server.unseeded = unseeded
+      ready(server)
+    })
   })
 }
 

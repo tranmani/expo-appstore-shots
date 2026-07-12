@@ -23,21 +23,26 @@ export function TabBar({ active }: { active: string }) {
   if (!tabBar?.items?.length) return null
 
   const tint = tabBar.tint ?? TINT
+  const idle = tabBar.idle ?? IDLE
+  // 'capsule' is the iOS 26 floating bar that expo-router's *native* tabs draw.
+  // 'bar' is the flat, full-width bar React Navigation's JS tabs draw. Pick the
+  // one your app actually ships, or the screenshot shows a different app.
+  const flat = tabBar.style === 'bar'
 
   return (
-    <View style={styles.wrap} pointerEvents="none">
-      <View style={styles.bar}>
+    <View style={[styles.wrap, flat && styles.wrapFlat]} pointerEvents="none">
+      <View style={[styles.bar, flat && { ...styles.barFlat, backgroundColor: tabBar.background ?? '#FFFFFF' }]}>
         {tabBar.items.map((item) => {
           const on = item.id === active
           const Glyph = item.icon ? (icons as Record<string, never>)[item.icon] : undefined
           return (
-            <View key={item.id} style={[styles.item, on && styles.itemOn]}>
+            <View key={item.id} style={[styles.item, !flat && on && styles.itemOn, flat && styles.itemFlat]}>
               {Glyph ? (
-                <Glyph size={26} color={on ? tint : IDLE} strokeWidth={on ? 2.4 : 2} />
+                <Glyph size={flat ? 24 : 26} color={on ? tint : idle} strokeWidth={on ? 2.2 : 2} />
               ) : (
-                <View style={[styles.dot, { backgroundColor: on ? tint : IDLE }]} />
+                <View style={[styles.dot, { backgroundColor: on ? tint : idle }]} />
               )}
-              <Text style={[styles.label, { color: on ? tint : IDLE }]} numberOfLines={1}>
+              <Text style={[styles.label, { color: on ? tint : idle }]} numberOfLines={1}>
                 {item.label}
               </Text>
             </View>
@@ -75,6 +80,20 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   itemOn: { backgroundColor: '#E9E9EB' },
+  // The flat bar spans the screen and sits on the home indicator, as React
+  // Navigation's does; the capsule floats above it.
+  wrapFlat: { bottom: 0 },
+  barFlat: {
+    height: 84,
+    paddingBottom: 22,
+    borderRadius: 0,
+    width: '100%',
+    justifyContent: 'space-around',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.08)',
+    shadowOpacity: 0,
+  },
+  itemFlat: { flex: 1, minWidth: 0, borderRadius: 0, gap: 3 },
   dot: { width: 22, height: 22, borderRadius: 11 },
   label: { fontSize: 11, fontWeight: '500', lineHeight: 14 },
 })

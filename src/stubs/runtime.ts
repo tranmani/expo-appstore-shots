@@ -4,7 +4,14 @@ export interface Runtime {
   locale: string
   storage: Record<string, string>
   secureStore: Record<string, string>
-  tabBar: { tint?: string; items: { id: string; label: string; icon?: string }[] }
+  tabBar: {
+    /** 'capsule' (iOS native tabs) or 'bar' (React Navigation's JS tabs). */
+    style?: 'capsule' | 'bar'
+    tint?: string
+    idle?: string
+    background?: string
+    items: { id: string; label: string; icon?: string }[]
+  }
   apiUrl: string
 }
 
