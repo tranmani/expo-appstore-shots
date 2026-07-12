@@ -1,0 +1,6 @@
+node_modules/
+.shots/
+test/fixture-app/out/
+test/fixture-app/.shots/
+.test.config.mjs
+appstore-generic/

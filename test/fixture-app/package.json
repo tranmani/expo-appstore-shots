@@ -1,0 +1,6 @@
+{
+  "name": "fixture-app",
+  "private": true,
+  "version": "0.0.0",
+  "description": "A minimal Expo-shaped app used by the test suite. It has no node_modules: every import it makes is either stubbed or supplied by the tool."
+}
