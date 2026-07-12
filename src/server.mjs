@@ -29,6 +29,29 @@ export function parseRoute(key) {
   return { method: method.toUpperCase(), parts: path.split('/').filter(Boolean) }
 }
 
+/**
+ * Static beats dynamic, left to right.
+ *
+ * `GET /bookings/today-count` and `GET /bookings/:id` both match
+ * `/bookings/today-count`, and whichever was declared first used to win — so the
+ * fixtures worked or didn't depending on the order of keys in an object literal.
+ * Sorting by specificity makes the exact path win wherever it is written, which
+ * is what every router does and what everyone assumes this one does.
+ */
+export function specificity(route) {
+  return route.parts.map((p) => (p.startsWith(':') ? 0 : 1))
+}
+
+export function byPrecedence(a, b) {
+  const sa = specificity(a)
+  const sb = specificity(b)
+  for (let i = 0; i < Math.max(sa.length, sb.length); i++) {
+    const d = (sb[i] ?? -1) - (sa[i] ?? -1)
+    if (d) return d
+  }
+  return 0
+}
+
 export function match(route, method, path) {
   if (route.method !== method) return null
   const parts = path.split('/').filter(Boolean)
@@ -44,10 +67,9 @@ export function match(route, method, path) {
 }
 
 export function serve({ port, dist, fixtures }) {
-  const routes = Object.entries(fixtures.routes ?? {}).map(([key, value]) => ({
-    ...parseRoute(key),
-    value,
-  }))
+  const routes = Object.entries(fixtures.routes ?? {})
+    .map(([key, value]) => ({ key, ...parseRoute(key), value }))
+    .sort(byPrecedence)
 
   /**
    * Every API call that no fixture matched. This is the to-do list: a screen
@@ -55,6 +77,11 @@ export function serve({ port, dist, fixtures }) {
    * far easier to read it here than to infer it from a blank PNG.
    */
   const unseeded = new Map()
+
+  /** And the mirror image: which fixtures were ever asked for. A fixture nobody
+   * requested is usually a typo'd path, which otherwise fails as an empty screen
+   * with nothing to explain it. */
+  const hits = new Set()
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://localhost:${port}`)
@@ -87,6 +114,7 @@ export function serve({ port, dist, fixtures }) {
     for (const route of routes) {
       const params = match(route, req.method ?? 'GET', url.pathname)
       if (!params) continue
+      hits.add(route.key)
       const value =
         typeof route.value === 'function'
           ? await route.value({ params, query: Object.fromEntries(url.searchParams), req })
@@ -117,6 +145,8 @@ export function serve({ port, dist, fixtures }) {
   return new Promise((ready) => {
     server.listen(port, () => {
       server.unseeded = unseeded
+      server.hits = hits
+      server.routes = routes
       ready(server)
     })
   })

@@ -28,12 +28,26 @@ export function normalise(config, configPath) {
   if (!out.rootLayout) throw new ConfigError('config.rootLayout is required (e.g. "src/app/_layout.tsx")')
   if (!out.screens?.length) throw new ConfigError('config.screens is empty')
 
+  out.warnings = []
+
   const ids = new Set()
   for (const screen of out.screens) {
     if (!screen.id) throw new ConfigError('every screen needs an id')
     if (!screen.module) throw new ConfigError(`screen "${screen.id}" has no module`)
     if (ids.has(screen.id)) throw new ConfigError(`duplicate screen id "${screen.id}"`)
     ids.add(screen.id)
+
+    // The trap that costs the most time. A tab screen's header is declared in
+    // `(tabs)/_layout.tsx` — a navigator this tool never mounts — so unless the
+    // screen asks for one here, it renders at y=0 with the status bar printed
+    // over its first row of content, and nothing about that looks like an error.
+    if (screen.tab && screen.header === undefined && !screen.title) {
+      out.warnings.push(
+        `screen "${screen.id}" is a tab screen with no title/header: its header lives in ` +
+          `(tabs)/_layout.tsx, which is not mounted here, so it will render under the status ` +
+          `bar. Add title: "…" (or header: false if the screen draws its own).`,
+      )
+    }
   }
 
   // No slides: shoot every screen with no caption. Useful on the first run, when

@@ -18,9 +18,26 @@ import { runtime } from './stubs/runtime'
 const TINT = '#367CED'
 const IDLE = '#0B0B0B'
 
+/**
+ * An icon name lucide does not have renders as nothing, and a hole in a tab bar
+ * is easy to miss. lucide only exists in the page (it is a react-native package,
+ * so Node cannot import it), so the names are checked here and handed out for
+ * the run to report — with a near-match, since this is nearly always a rename:
+ * `BarChart3` became `ChartColumn`.
+ */
+function reportIcons(items: { id: string; icon?: string }[]) {
+  const w = window as unknown as Record<string, unknown>
+  w.__SHOTS_ICON_NAMES__ = Object.keys(icons)
+  w.__SHOTS_ICONS_MISSING__ = items
+    .filter((i) => i.icon && !(i.icon in icons))
+    .map((i) => ({ tab: i.id, icon: i.icon }))
+}
+
 export function TabBar({ active }: { active: string }) {
   const { tabBar } = runtime()
   if (!tabBar?.items?.length) return null
+
+  reportIcons(tabBar.items)
 
   const tint = tabBar.tint ?? TINT
   const idle = tabBar.idle ?? IDLE
@@ -30,7 +47,13 @@ export function TabBar({ active }: { active: string }) {
   const flat = tabBar.style === 'bar'
 
   return (
-    <View style={[styles.wrap, flat && styles.wrapFlat]} pointerEvents="none">
+    <View
+      style={[styles.wrap, flat && styles.wrapFlat]}
+      pointerEvents="none"
+      // Marks this subtree as the tool's chrome, so the verify pass does not
+      // report the tab bar's own labels as app content hidden under the tab bar.
+      dataSet={{ shotsChrome: 'true' }}
+    >
       <View style={[styles.bar, flat && { ...styles.barFlat, backgroundColor: tabBar.background ?? '#FFFFFF' }]}>
         {tabBar.items.map((item) => {
           const on = item.id === active

@@ -22,6 +22,10 @@ runtime dependencies.
 | This tool | — | `npm install --save-dev expo-appstore-shots` (or `pnpm add -D`, `yarn add -D`) |
 | Chromium | `npx playwright install --dry-run chromium` | `npx playwright install chromium` (~130MB, once per machine) |
 
+The tool brings its own web stack. **Do not add `react-dom` or `react-native-web`
+to the app** — they are this tool's dependencies, not the app's, and a DOM package
+sitting in a native app's tree is something Metro can trip over.
+
 On a bare Linux box, Chromium also needs system libraries. If the launch fails
 with a missing `.so`, run `npx playwright install-deps chromium` (needs sudo), or
 point `CHROME_PATH` at a Chrome that is already installed:
@@ -32,11 +36,33 @@ CHROME_PATH=/usr/bin/google-chrome npx expo-appstore-shots
 
 Nothing else is required. There is no Python, no ImageMagick, no Xcode, no Mac.
 
+### pnpm, and monorepos
+
+pnpm's default layout is strict: a package can only import what it declares. If
+the tool's own dependencies come back unresolvable — `playwright`, `esbuild`,
+`pngjs` — the install did not link them, which is usually one of:
+
+- **Installed from a git URL rather than npm.** `pnpm add -D expo-appstore-shots`
+  from the registry. A git dependency records the dep graph without building it.
+- **A workspace.** Install the tool in the *app's* package (`apps/mobile`), not at
+  the workspace root, so it lands next to the app it photographs.
+- **`node-linker=hoisted`.** Works, but re-install after adding the tool
+  (`rm -rf node_modules && pnpm install`) rather than expecting an incremental add
+  to link it.
+
+Confirm with `npx expo-appstore-shots --help`. If that runs, the install is sound.
+
 ---
 
 ## 1. Read the app before you configure it
 
-Find, in this order:
+**Start with `npx expo-appstore-shots init --scan`.** It reads `app.json`, walks
+the router directory, parses the tabs layout and greps the fetch layer, then
+writes a `shots.config.mjs` listing *every* route and a `shots/fixtures.mjs` with
+a stub per endpoint it saw. That is a first draft, not an answer — it cannot know
+which five screens sell the app. Cut it down and put real data in the fixtures.
+
+Then confirm each of these by hand, because the scan guesses and you should not:
 
 1. **The root layout** — usually `app/_layout.tsx` or `src/app/_layout.tsx`. This
    is `rootLayout` in the config. It holds the providers, the theme and the
@@ -57,12 +83,37 @@ Find, in this order:
 6. **Anything that touches hardware directly** — a keychain wrapper, a device-key
    module, an analytics client. Those need a `stubs` or `redirect` entry.
 
+## 1a. Three traps, before you lose an hour to them
+
+**A tab screen has no header unless you ask for one.** A tab's header is declared
+in `(tabs)/_layout.tsx` — a navigator this tool does not mount — and the root
+layout usually sets `headerShown: false` for the whole group. So a tab screen
+renders at `y = 0`, with the status bar printed over its first row of content,
+and nothing about that looks like an error. Give every tab screen a `title`, or
+`header: false` if it draws its own. The run warns you if you forget.
+
+**react-native-web does not implement every native prop.** The one that bites is
+`adjustsFontSizeToFit`: on a device it shrinks a number until it fits its tile, and
+in a plain browser it does nothing, so the number overflows and is truncated to
+`48 260…`. This tool shims that specific prop, but others may be missing. **When a
+frame looks wrong, suspect the web renderer before you report an app bug** — you
+are looking at the app's code through react-native-web, not at the app.
+
+**Fixture routes are matched most-specific-first.** `GET /bookings/today-count`
+beats `GET /bookings/:id` no matter which you declare first, so you can write them
+in any order.
+
 ## 2. Write the config, then run it once with no captions
 
-`npx expo-appstore-shots init`, fill in `screens` and `rootLayout`, leave
-`slides` empty, and run it. Every screen is shot uncaptioned. **Look at the
-PNGs.** You are checking that the screens rendered at all, not that they are
-pretty.
+Fill in `screens` and `rootLayout`, leave `slides` empty, and run it. Every screen
+is shot uncaptioned. **Look at the PNGs.** You are checking that the screens
+rendered at all, not that they are pretty.
+
+Iterating on one screen? Do not re-shoot the set:
+
+```bash
+npx expo-appstore-shots --screen home --device iphone-6.9
+```
 
 ## 3. Seed the fixtures until the screens look inhabited
 
@@ -96,14 +147,29 @@ screen that shows what the app is *for*.
 
 ## 5. Verify before you hand it over
 
-- Open every frame and look at it. Blank screens and clipped text are obvious in
-  the image and invisible in the logs.
-- The run prints `! device/screen: <error>` for anything the page threw. Zero of
-  those, or explain each one.
-- Sizes and alpha are already correct by construction, but if the developer asks:
-  the iPhone slot is 1290×2796 and PNG colour type must be 2 (no alpha).
+**Open every frame and look at it.** This is not optional and nothing replaces it.
+A clean run is not a correct frame: every check below exists because a run once
+reported success and handed over a polished 1290×2796 PNG that was not shippable.
+
+The run tells you what it can. Read the report at the end:
+
+| Line | Means |
+|---|---|
+| `✗ device/screen: …` | The page **threw**. The screen did not render. Fix, or explain each one. |
+| `! … clipped text — "48 260…"` | Text is cut off. Usually a native prop react-native-web lacks, not an app bug. |
+| `! … N% of the frame is one flat colour` | Dead space: the list ran out of data before the screen ran out of room. Seed more, or drop the device. |
+| `! … the status bar is drawn over "July"` | Content is under the chrome. Usually the missing-header trap above. |
+| `! … had no fixture` | A route the app called and you did not seed. The empty state in the frame is this. |
+| `! … fixture(s) were never requested` | The mirror image, and almost always a **typo in a fixture path**. |
+| `! … lucide has no icon "BarChart3"` | A renamed icon, rendering as a hole in the tab bar. Take the suggestion. |
+
+Then check by eye what no tool can:
+
+- Sizes and alpha are correct by construction, but if the developer asks: the
+  iPhone slot is 1290×2796 and PNG colour type must be 2 (no alpha).
 - Tell the developer plainly what is *not* the app: the seeded data, the redrawn
-  tab bar, the substituted font.
+  tab bar, and the font — unless you pointed `fonts` at the app's own faces, in
+  which case say that you did.
 
 ## 6. What to say when you are done
 
@@ -127,3 +193,18 @@ Devices: `iphone-6.9` (1290×2796, required), `iphone-6.5` (1284×2778),
 `ipad-13` (2064×2752), `ipad-12.9` (2048×2732). Only ship iPad frames if the app
 actually declares `"supportsTablet": true` **and** its layout adapts — a
 stretched phone layout on a 13" canvas is a rejection, not a screenshot.
+
+6.9" and 6.5" are rendered in the **same viewport** and differ only in output
+size, which is why the run says `5 screens × 2 viewports → 3 device sizes`. Two
+viewports, three folders. That is not a bug.
+
+### Options worth knowing
+
+| In the config | Does |
+|---|---|
+| `fonts: { Lato: 'assets/fonts/Lato.ttf' }` | Loads the app's **real** typefaces, so the screen is set in them. Without it everything falls back to one substituted face, which you then have to disclose. |
+| `screens[].runtime` | Overrides `storage` / `secureStore` / `clock` / `colorScheme` / `coords` for one screen. This is how the same module is shot in two states — a calendar in agenda view *and* in month view. |
+| `runtime.colorScheme: 'dark'` | Shoots dark mode. Nearly free, and dark frames sell. |
+| `screens[].scroll` | `'top'` (default), `'end'`, a pixel offset, or a `testID` to scroll to. Warns if the screen has nothing that scrolls. |
+| `screens[].title` / `header` | See the tab-screen trap above. |
+| `tabBar.style` | `'capsule'` (expo-router native tabs, iOS 26) or `'bar'` (React Navigation's flat JS bar). Pick the one the app actually ships. |

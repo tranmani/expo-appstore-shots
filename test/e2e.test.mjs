@@ -49,7 +49,7 @@ after(async () => {
 
 test('the app renders with no runtime errors', { skip: skip() }, () => {
   // capture.mjs prints "! device/screen: …" for anything the page threw.
-  assert.ok(!stdout.includes('!'), `page errors:\n${stdout}`)
+  assert.ok(!stdout.includes('✗'), `page errors:\n${stdout}`)
   assert.match(stdout, /1 frames in /)
   // Every route the fixture app calls is seeded, so nothing fell through.
   assert.ok(!stdout.includes('had no fixture'), stdout)

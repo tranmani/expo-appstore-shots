@@ -12,13 +12,13 @@
 export default {
   projectRoot: '../../../perron/apps/mobile',
   rootLayout: 'src/app/_layout.tsx',
-  outDir: '../../appstore-generic',
+  outDir: '../../appstore-v2',
 
   screens: [
     { id: 'station', module: 'src/app/station/[code].tsx', route: 'station/[code]', params: { code: 'ASD' }, back: true },
     { id: 'room', module: 'src/app/room/[roomId].tsx', route: 'room/[roomId]', back: true,
       params: { roomId: 'r-disruption', code: 'ASD', title: 'Storing: seinstoring tussen Amsterdam C. en Haarlem', disruption: '1' } },
-    { id: 'nearby', module: 'src/app/(tabs)/index.tsx', route: '(tabs)', tab: 'nearby' },
+    { id: 'nearby', module: 'src/app/(tabs)/index.tsx', route: '(tabs)', tab: 'nearby', header: false },
     { id: 'passport', module: 'src/app/passport/[authorId].tsx', route: 'passport/[authorId]', params: { authorId: 'u_demo' }, back: true },
   ],
 

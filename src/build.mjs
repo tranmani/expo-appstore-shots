@@ -50,6 +50,20 @@ export function pickReact({ app, appDom, own }) {
   return { from: 'own' }
 }
 
+/**
+ * The `node_modules` directory a resolved package sits in.
+ *
+ * `<nm>/react-native-web/package.json` → `<nm>`, and a scoped package is one
+ * level deeper: `<nm>/@scope/pkg/package.json` → `<nm>`. Under pnpm the resolved
+ * path is the real one inside `.pnpm/…`, whose parent is a real node_modules
+ * holding that package and its dependencies — which is exactly what esbuild
+ * needs to resolve from.
+ */
+export function nodeModulesOf(pkgJsonPath, name) {
+  const up = name.startsWith('@') ? '../../..' : '../..'
+  return resolve(pkgJsonPath, up)
+}
+
 /** Resolve a package from the *app's* node_modules, not this tool's. */
 function fromApp(pkg, projectRoot) {
   try {
@@ -66,7 +80,9 @@ function fromApp(pkg, projectRoot) {
  */
 function nativeAliases() {
   return {
-    'react-native': 'react-native-web',
+    // Not react-native-web directly: the shim re-exports all of it and adds the
+    // one prop it is missing (adjustsFontSizeToFit). See stubs/react-native.tsx.
+    'react-native': stub('react-native.tsx'),
     'expo-router': stub('expo-router.tsx'),
     'expo-router/unstable-native-tabs': stub('native-tabs.tsx'),
     'expo-location': stub('expo-location.ts'),
@@ -129,7 +145,7 @@ function entrySource(config, projectRoot) {
 import { View } from 'react-native'
 import RootLayout from ${rel(config.rootLayout)}
 import { setTarget } from ${JSON.stringify(stub('expo-router.tsx'))}
-import { setInsets, setListScroll } from ${JSON.stringify(stub('runtime.ts'))}
+import { setInsets, setListScroll, TAB_BAR_HEIGHT } from ${JSON.stringify(stub('runtime.ts'))}
 import { TabBar } from ${JSON.stringify(resolve(here, 'TabBar.tsx'))}
 ${imports}
 
@@ -141,9 +157,26 @@ const q = new URLSearchParams(location.search)
 const shot = SHOTS[q.get('screen')]
 if (!shot) throw new Error('unknown screen: ' + q.get('screen'))
 
-setInsets({ top: Number(q.get('top') || 0), bottom: Number(q.get('bottom') || 0), left: 0, right: 0 })
+const top = Number(q.get('top') || 0)
+const safeBottom = Number(q.get('bottom') || 0)
+
+// The tab bar is an overlay here but takes layout space on a device, so a screen
+// that sits under one is inset above it — otherwise a FAB or a paginator lands
+// beneath the bar in the frame and the only fix is to delete the feature.
+const bottom = shot.tab ? Math.max(safeBottom, TAB_BAR_HEIGHT) : safeBottom
+
+setInsets({ top, bottom, left: 0, right: 0 })
 setListScroll(shot.scroll)
 setTarget(shot)
+
+// The chrome this tool draws, in page coordinates — so the verify pass can tell
+// when the app's own content is hiding underneath it.
+window.__SHOTS_ZONES__ = [
+  { name: 'status bar', top: 0, bottom: top },
+  ...(shot.tab
+    ? [{ name: 'tab bar', top: window.innerHeight - TAB_BAR_HEIGHT, bottom: window.innerHeight }]
+    : []),
+]
 
 function App() {
   return (
@@ -168,10 +201,19 @@ export async function bundle(config) {
 
   const alias = { ...nativeAliases(), ...resolveExtraStubs(config, projectRoot) }
 
-  // The entry lives beside the app, so the web-only packages — this tool's
-  // dependencies, not the app's — have to be resolved from here.
   const own = createRequire(import.meta.url)
-  alias['react-native-web'] = own.resolve('react-native-web')
+
+  // esbuild resolves an alias *target* from the working directory, and aliases
+  // do not chain — so `react-native` → `react-native-web` is a bare specifier
+  // that must be findable from the app being photographed. Handing esbuild this
+  // tool's own node_modules as a nodePath is what makes that true, and it is
+  // what keeps the web-only packages (react-native-web, react-dom) the tool's
+  // problem rather than the app's: an Expo app should not have to install DOM
+  // packages, where Metro can trip over them, just to be screenshotted.
+  const nodePaths = [
+    nodeModulesOf(own.resolve('react-native-web/package.json'), 'react-native-web'),
+    resolve(here, '..', 'node_modules'),
+  ].filter((d, i, all) => existsSync(d) && all.indexOf(d) === i)
 
   const appReact = fromApp('react', projectRoot)
   const appReactDom = fromApp('react-dom', projectRoot)
@@ -213,6 +255,7 @@ export async function bundle(config) {
     target: 'chrome120',
     jsx: 'automatic',
     alias,
+    nodePaths,
     plugins: [redirectPlugin(config)],
     // `.web.js` first: this is how react-native-svg and friends ship their
     // browser implementations.
@@ -271,6 +314,7 @@ function redirectPlugin(config) {
 
 async function html(config) {
   const font = await fontFace(config)
+  const appFonts = await appFontFaces(config)
   const runtime = JSON.stringify({
     coords: config.runtime?.coords ?? { latitude: 52.3789, longitude: 4.9003, accuracy: 8 },
     locale: config.runtime?.locale ?? 'en-US',
@@ -280,27 +324,75 @@ async function html(config) {
     apiUrl: `http://127.0.0.1:${config.apiPort}`,
   })
 
+  // With the app's own faces loaded, the screen is set in them and the shot is
+  // the real thing. Without, everything falls back to one substituted face —
+  // legible, but not the app, and something you then have to disclose.
+  const fallback = config.frame?.fontFamily ?? 'Inter'
+  const typeface = appFonts.length
+    ? ''
+    : `  * { font-family: '${fallback}', system-ui, sans-serif !important;
+      -webkit-font-smoothing: antialiased; }`
+
   return `<!doctype html>
 <meta charset="utf-8">
 <title>shot</title>
 <style>
 ${font}
+${appFonts.map((f) => f.css).join('\n')}
   html, body, #root { height: 100%; margin: 0; padding: 0; overflow: hidden; }
   /* The app's root view is \`flex: 1\`, which only fills the screen if its parent
      is a flex container. Without this, short screens stop halfway down the page
      and anything pinned to the bottom (a chat composer) falls off it. */
   #root { display: flex; flex-direction: column; }
-  * { font-family: '${config.frame?.fontFamily ?? 'Inter'}', system-ui, sans-serif !important;
-      -webkit-font-smoothing: antialiased; }
+  body { font-family: '${appFonts[0]?.family ?? fallback}', system-ui, sans-serif;
+         -webkit-font-smoothing: antialiased; }
+${typeface}
 </style>
 <div id="root"></div>
 <script>
   window.global = window;
   window.process = { env: { NODE_ENV: 'production' } };
-  window.__SHOTS__ = ${runtime};
+  // The run's state, with this screen's overrides on top — which is how one
+  // module gets photographed in several states.
+  window.__SHOTS__ = Object.assign(${runtime}, window.__SHOTS_OVERRIDE__ || {});
 </script>
 <script src="/app.js"></script>
 `
+}
+
+/**
+ * The app's own typefaces.
+ *
+ * An Expo app loads its faces at runtime through expo-font, which does nothing
+ * in a browser — so without this, every screen renders in a substituted face and
+ * the frame is subtly not the app. Point `fonts` at the files the app already
+ * ships and they are embedded as real @font-face rules, under the family name
+ * the app's styles ask for.
+ *
+ *   fonts: { Lato: 'assets/fonts/Lato-Regular.ttf',
+ *            'Lato-Black': 'assets/fonts/Lato-Black.ttf' }
+ */
+async function appFontFaces(config) {
+  const entries = Object.entries(config.fonts ?? {})
+  const out = []
+  for (const [family, file] of entries) {
+    const path = resolve(config.projectRoot, file)
+    if (!existsSync(path)) {
+      throw new Error(`config.fonts["${family}"] points at ${file}, which does not exist`)
+    }
+    out.push({ family, css: await faceFor(family, path) })
+  }
+  return out
+}
+
+async function faceFor(family, path) {
+  const data = await readFile(path)
+  const format = path.endsWith('.woff2') ? 'woff2' : path.endsWith('.woff') ? 'woff' : 'truetype'
+  return `  @font-face {
+    font-family: '${family}';
+    font-display: block;
+    src: url(data:font/${format};base64,${data.toString('base64')}) format('${format}');
+  }`
 }
 
 /**

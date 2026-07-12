@@ -31,11 +31,31 @@ export function setInsets(next: typeof insets) {
 export const getInsets = () => insets
 
 /**
- * Where a list starts. A chat opens on its newest message (`end`); a list of
- * clients opens at the top, which is also where a screenshot of it should start.
+ * How much room the tab bar takes.
+ *
+ * It is drawn `position: fixed`, floating over the content — but on a device the
+ * real bar *takes layout space*, and the screen is inset above it. Without this,
+ * anything anchored to the bottom (a floating action button, a paginator) lands
+ * underneath the bar in the frame, and the only way to get a clean shot is to
+ * delete the feature — which is a lie about the app.
+ *
+ * Defined once, in geometry.mjs, because the run needs the same number: it has
+ * to know which rows of the PNG are the bar and not dead space.
  */
-let listScroll: 'top' | 'end' = 'top'
-export function setListScroll(v: 'top' | 'end') {
+export { TAB_BAR_HEIGHT } from '../geometry.mjs'
+
+/**
+ * Where a list starts.
+ *
+ * A chat opens on its newest message (`end`); a list of clients opens at the top,
+ * which is also where a screenshot of it should start. A number scrolls to that
+ * offset, and a string scrolls to the element with that `testID` — either lets a
+ * frame land on a specific section rather than on whichever end of the content
+ * happens to be interesting.
+ */
+export type Scroll = 'top' | 'end' | number | string
+let listScroll: Scroll = 'top'
+export function setListScroll(v: Scroll) {
   listScroll = v
 }
 export const getListScroll = () => listScroll
