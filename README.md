@@ -53,11 +53,19 @@ export default {
     { id: 'home',   module: 'src/app/(tabs)/index.tsx', route: '(tabs)', tab: 'home' },
     { id: 'detail', module: 'src/app/item/[id].tsx', route: 'item/[id]',
       params: { id: '42' }, back: true },
+    // A tab screen whose header is declared in the tabs layout (never mounted
+    // here) needs its title given: `title` implies a header, `header` forces it
+    // either way. `scroll: 'end'` opens a chat on its newest message.
+    { id: 'chat',   module: 'src/app/chat/[id].tsx', route: 'chat/[id]',
+      params: { id: '7' }, back: true, scroll: 'end' },
   ],
 
-  tabBar: {                            // lucide icon names
+  tabBar: {
+    style: 'capsule',                  // 'capsule' = iOS native tabs; 'bar' = React Navigation's JS tabs
     tint: '#367CED',
-    items: [
+    idle: '#0B0B0B',
+    background: '#FFFFFF',
+    items: [                           // lucide icon names
       { id: 'home', label: 'Home', icon: 'House' },
       { id: 'you',  label: 'You',  icon: 'CircleUserRound' },
     ],
@@ -135,6 +143,14 @@ redirect: { '(^|/)device-key$': 'shots/stubs/device-key.ts' },
 
 **Something below the fold is missing** — the screen is taller than the viewport.
 That is also true on device; scroll position is what a screenshot captures.
+
+**A screen shows an empty state you did not expect** — read the end of the run.
+Every API call that no fixture matched is listed there; the empty state is almost
+always one of them.
+
+**No header on a tab screen** — its header is declared in the tabs layout, which a
+one-screen harness never mounts, while the root layout hides the header for the
+whole tab group. Give the screen a `title`.
 
 ## Requirements
 
