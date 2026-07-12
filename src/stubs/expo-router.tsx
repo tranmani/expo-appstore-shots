@@ -22,6 +22,13 @@ export interface Target {
   tab?: string
   /** Header title, when the screen's own layout (not the root one) sets it. */
   title?: string
+  /**
+   * Force the header on or off. A tab screen's header is usually declared in the
+   * tabs layout, which a one-screen harness never mounts — while the *root*
+   * layout hides the header for the whole tab group. Both are true at once, so
+   * the config has to say which it meant.
+   */
+  header?: boolean
 }
 
 let target: Target
@@ -122,6 +129,7 @@ export function Stack({
     ...(registered[target.route] ?? {}),
     ...(target.title ? { title: target.title } : {}),
     ...own,
+    ...(target.header === undefined ? {} : { headerShown: target.header }),
   }
   const custom = screenOptions?.header as ((p: Record<string, unknown>) => ReactNode) | undefined
   const Screen = target.component

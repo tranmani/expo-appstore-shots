@@ -119,6 +119,7 @@ function entrySource(config, projectRoot) {
     back: ${Boolean(s.back)},
     tab: ${s.tab ? JSON.stringify(s.tab) : 'undefined'},
     title: ${s.title ? JSON.stringify(s.title) : 'undefined'},
+    header: ${s.header === undefined ? (s.title ? 'true' : 'undefined') : String(Boolean(s.header))},
   },`,
     )
     .join('\n')
