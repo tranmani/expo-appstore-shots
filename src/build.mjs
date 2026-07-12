@@ -120,6 +120,7 @@ function entrySource(config, projectRoot) {
     tab: ${s.tab ? JSON.stringify(s.tab) : 'undefined'},
     title: ${s.title ? JSON.stringify(s.title) : 'undefined'},
     header: ${s.header === undefined ? (s.title ? 'true' : 'undefined') : String(Boolean(s.header))},
+    scroll: ${JSON.stringify(s.scroll ?? 'top')},
   },`,
     )
     .join('\n')
@@ -128,7 +129,7 @@ function entrySource(config, projectRoot) {
 import { View } from 'react-native'
 import RootLayout from ${rel(config.rootLayout)}
 import { setTarget } from ${JSON.stringify(stub('expo-router.tsx'))}
-import { setInsets } from ${JSON.stringify(stub('runtime.ts'))}
+import { setInsets, setListScroll } from ${JSON.stringify(stub('runtime.ts'))}
 import { TabBar } from ${JSON.stringify(resolve(here, 'TabBar.tsx'))}
 ${imports}
 
@@ -141,6 +142,7 @@ const shot = SHOTS[q.get('screen')]
 if (!shot) throw new Error('unknown screen: ' + q.get('screen'))
 
 setInsets({ top: Number(q.get('top') || 0), bottom: Number(q.get('bottom') || 0), left: 0, right: 0 })
+setListScroll(shot.scroll)
 setTarget(shot)
 
 function App() {

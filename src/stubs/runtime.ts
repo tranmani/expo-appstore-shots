@@ -29,3 +29,13 @@ export function setInsets(next: typeof insets) {
   insets = next
 }
 export const getInsets = () => insets
+
+/**
+ * Where a list starts. A chat opens on its newest message (`end`); a list of
+ * clients opens at the top, which is also where a screenshot of it should start.
+ */
+let listScroll: 'top' | 'end' = 'top'
+export function setListScroll(v: 'top' | 'end') {
+  listScroll = v
+}
+export const getListScroll = () => listScroll

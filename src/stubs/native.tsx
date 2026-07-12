@@ -12,7 +12,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ScrollView, View } from 'react-native'
-import { getInsets, runtime } from './runtime'
+import { getInsets, getListScroll, runtime } from './runtime'
 
 /* -------------------------------------------------------- expo-location --- */
 
@@ -330,9 +330,11 @@ const node = (x: ReactNode | (() => ReactNode)): ReactNode =>
 
 /**
  * A list is a list. Recycling is a scroll-performance concern and a still frame
- * has no scrolling, so every row is rendered — which is also what puts the whole
- * conversation in one screenshot. It lands scrolled to the end, the way a chat
- * screen opens on its newest message.
+ * has no scrolling, so every row is rendered — which is also what puts a whole
+ * conversation in one screenshot.
+ *
+ * It starts at the top, unless the screen is configured `scroll: 'end'` — a chat
+ * opens on its newest message, and a screenshot of it should too.
  */
 export function FlashList<T>({
   data = [],
@@ -347,6 +349,7 @@ export function FlashList<T>({
 }: FlashListProps<T>) {
   const list = useRef<ScrollView>(null)
   useEffect(() => {
+    if (getListScroll() !== 'end') return
     const id = setTimeout(() => list.current?.scrollToEnd({ animated: false }), 400)
     return () => clearTimeout(id)
   }, [data.length])
