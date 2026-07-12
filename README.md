@@ -170,4 +170,10 @@ See [AGENTS.md](AGENTS.md) — a step-by-step procedure for setting this up in a
 unfamiliar repo, including how to discover the screens, what to seed, and how to
 check the result.
 
+Point your agent at it and it will read the app, then **come back and ask you
+what the set should say** — which screens, in what order, what the captions argue,
+what the frames look like — offering choices drawn from your own code, with "you
+decide" as the last option. It cannot get that out of the repo, and the cheapest
+moment to disagree is before six frames exist. Say "you decide" and it will.
+
 MIT.

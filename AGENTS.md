@@ -7,6 +7,11 @@ tells you what to look for and what to do when it is not there.
 The goal is screenshots of the **real screens**. Do not fall back to drawing
 mock-ups, and do not ship a frame you have not looked at.
 
+Two steps are not optional. **Step 2**: once you have read the app, stop and ask
+the developer what the set should say — the code cannot tell you that, and the
+cheapest time to be wrong about it is before you have made six frames. **Step 7**:
+open every frame and look at it, because a clean run is not a correct frame.
+
 ---
 
 ## 0. Prerequisites — install these before anything else
@@ -83,7 +88,45 @@ Then confirm each of these by hand, because the scan guesses and you should not:
 6. **Anything that touches hardware directly** — a keychain wrapper, a device-key
    module, an analytics client. Those need a `stubs` or `redirect` entry.
 
-## 1a. Three traps, before you lose an hour to them
+## 2. Now stop, and ask.
+
+You have read the app. You know what screens exist, what the tabs are and what
+the API answers. What you do **not** know is what this listing is supposed to say
+— and none of it is inferable from the code. Guessing it and producing six
+finished frames means the developer's first chance to disagree comes *after* all
+the work, which is the expensive place to disagree.
+
+So before you write a single caption: **ask, once, in a single message.** Offer
+concrete options taken from what you actually found in *their* app — never
+generic ones — and make the last option "you decide".
+
+Ask about these five, and nothing else:
+
+| | Offer them |
+|---|---|
+| **Screens** | The 5–6 you would pick, named, in order, each with one line on why it earns a slot. Say which you are leaving out. |
+| **Story** | What the set argues, in one sentence. Usually there are two or three honest readings of the same app — offer them; they are not interchangeable. |
+| **Caption voice** | Short and declarative? Benefit-led? Or none at all, letting the screens speak? Show one caption written each way, for the same screen, so the difference is visible rather than described. |
+| **Look** | Caption ground colour and light/dark. Take the colours from the app's own theme file; do not invent a palette. |
+| **Devices** | 6.9" is required. iPad only if `app.json` says `"supportsTablet": true` **and** the layout actually adapts — a stretched phone layout on a 13" canvas is a rejection, not a screenshot. |
+
+Then, as the final option, plainly:
+
+> **Or say "you decide" and I will pick all of the above and show you the
+> frames.** Changing any of it afterwards is cheap — one screen re-shoots in
+> seconds with `--screen <id>`.
+
+Mean that offer. If they take it, choose confidently and do not ask again — an
+agent that asks for permission at every step is worse than one that never asked.
+The point of the question is to be wrong *before* the work, not to move the
+decision onto them.
+
+**Do not ask about anything you can find out yourself.** Route names, the tab
+labels, which endpoints a screen calls, what the theme colours are — those are in
+the repo. Reading them is your job. This question is only for the things that
+live in the developer's head.
+
+## 3. Three traps, before you lose an hour to them
 
 **A tab screen has no header unless you ask for one.** A tab's header is declared
 in `(tabs)/_layout.tsx` — a navigator this tool does not mount — and the root
@@ -103,7 +146,7 @@ are looking at the app's code through react-native-web, not at the app.
 beats `GET /bookings/:id` no matter which you declare first, so you can write them
 in any order.
 
-## 2. Write the config, then run it once with no captions
+## 4. Write the config, then run it once with no captions
 
 Fill in `screens` and `rootLayout`, leave `slides` empty, and run it. Every screen
 is shot uncaptioned. **Look at the PNGs.** You are checking that the screens
@@ -115,7 +158,7 @@ Iterating on one screen? Do not re-shoot the set:
 npx expo-appstore-shots --screen home --device iphone-6.9
 ```
 
-## 3. Seed the fixtures until the screens look inhabited
+## 5. Seed the fixtures until the screens look inhabited
 
 The first run usually produces empty states: no data, a permission prompt, a
 login wall. Each of those is a fixture you have not written yet.
@@ -135,7 +178,7 @@ Write data a real user could plausibly have. Never lorem ipsum, never a name
 that suggests a real person, and never a fuller list than the app's own rules
 allow (if a feature only shows results within 250m, do not seed five).
 
-## 4. Write the captions
+## 6. Write the captions
 
 One `slides` entry per screenshot, in upload order. A caption must describe
 **what is on its own screenshot**. A promise the screen does not keep is worse
@@ -145,7 +188,7 @@ lie to the user.
 Alternate `ground: 'dark'` / `'light'` so the set has rhythm. Lead with the
 screen that shows what the app is *for*.
 
-## 5. Verify before you hand it over
+## 7. Verify before you hand it over
 
 **Open every frame and look at it.** This is not optional and nothing replaces it.
 A clean run is not a correct frame: every check below exists because a run once
@@ -171,7 +214,7 @@ Then check by eye what no tool can:
   tab bar, and the font — unless you pointed `fonts` at the app's own faces, in
   which case say that you did.
 
-## 6. What to say when you are done
+## 8. What to say when you are done
 
 Where the frames are, what each one shows, what you seeded, and anything you
 noticed while doing it — a truncated label, an empty state, a screen that does
