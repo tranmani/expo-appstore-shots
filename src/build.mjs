@@ -18,6 +18,38 @@ const stub = (name) => resolve(here, 'stubs', name)
 
 const major = (v) => Number(String(v).split('.')[0])
 
+const version = async (pkgJson) => JSON.parse(await readFile(pkgJson, 'utf8')).version
+
+/**
+ * Which react / react-dom pair to bundle.
+ *
+ * They must be one copy each and the same major, or React throws #527 on the
+ * first render and every screenshot comes out blank. Two traps make this less
+ * obvious than it sounds:
+ *
+ *  - An Expo app usually has **no** react-dom at all (it never renders to a DOM).
+ *  - A monorepo often has a *hoisted* react-dom that some unrelated tool pulled
+ *    in, on a completely different major from the app's react. Resolving it and
+ *    trusting it is exactly how you get a blank PNG.
+ *
+ * So the app's pair is used only when it is internally consistent; otherwise the
+ * tool's own matched pair is, which is safe whenever the majors agree.
+ */
+export function pickReact({ app, appDom, own }) {
+  if (appDom && app && major(appDom) === major(app)) return { from: 'app' }
+
+  if (app && major(app) !== major(own)) {
+    return {
+      error:
+        `This app is on React ${app} and expo-appstore-shots ships React ${own}.\n` +
+        `Install a matching react-dom in the app and it will be used instead:\n\n` +
+        `  npm install --save-dev react-dom@${major(app)}\n`,
+    }
+  }
+
+  return { from: 'own' }
+}
+
 /** Resolve a package from the *app's* node_modules, not this tool's. */
 function fromApp(pkg, projectRoot) {
   try {
@@ -138,35 +170,24 @@ export async function bundle(config) {
   const own = createRequire(import.meta.url)
   alias['react-native-web'] = own.resolve('react-native-web')
 
-  /**
-   * React and react-dom must be the *same* copy and the same version, or React
-   * throws error #527 on the first render ("incompatible versions") and every
-   * screen comes out blank.
-   *
-   * If the app has its own react-dom, both come from the app — matched by
-   * construction. Otherwise both come from this tool, which also keeps a single
-   * React in the bundle. The only broken case is an app on a different React
-   * major, and that gets an actionable error rather than a blank PNG.
-   */
+  const appReact = fromApp('react', projectRoot)
   const appReactDom = fromApp('react-dom', projectRoot)
-  if (appReactDom) {
-    const react = fromApp('react', projectRoot)
-    if (react) alias.react = dirname(react)
+  const ownReact = own.resolve('react/package.json')
+
+  const pick = pickReact({
+    app: appReact && (await version(appReact)),
+    appDom: appReactDom && (await version(appReactDom)),
+    own: await version(ownReact),
+  })
+
+  if (pick.error) throw new Error(pick.error)
+
+  if (pick.from === 'app') {
+    alias.react = dirname(appReact)
     alias['react-dom'] = dirname(appReactDom)
     alias['react-dom/client'] = resolve(dirname(appReactDom), 'client.js')
   } else {
-    const appReact = fromApp('react', projectRoot)
-    const appMajor = appReact ? major(JSON.parse(await readFile(appReact, 'utf8')).version) : null
-    const ownMajor = major(JSON.parse(await readFile(own.resolve('react/package.json'), 'utf8')).version)
-
-    if (appMajor && appMajor !== ownMajor) {
-      throw new Error(
-        `This app is on React ${appMajor} and expo-appstore-shots ships React ${ownMajor}.\n` +
-          `Install a matching react-dom in the app and it will be used instead:\n\n` +
-          `  npm install --save-dev react-dom@${appMajor}\n`,
-      )
-    }
-    alias.react = dirname(own.resolve('react/package.json'))
+    alias.react = dirname(ownReact)
     alias['react-dom'] = dirname(own.resolve('react-dom/package.json'))
     alias['react-dom/client'] = own.resolve('react-dom/client')
   }

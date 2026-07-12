@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { PNG } from 'pngjs'
 
+import { pickReact } from '../src/build.mjs'
 import { ConfigError, normalise, slideFile } from '../src/config.mjs'
 import { DEVICES, resolveDevices } from '../src/devices.mjs'
 import { match, parseRoute } from '../src/server.mjs'
@@ -115,4 +116,23 @@ test('png: the alpha channel is dropped, and no pixel changes value', () => {
     assert.equal(out.data[i * 4 + 1], g)
     assert.equal(out.data[i * 4 + 2], b)
   })
+})
+
+test('react: an app with a matching react-dom supplies both', () => {
+  assert.deepEqual(pickReact({ app: '19.1.0', appDom: '19.1.0', own: '19.2.7' }), { from: 'app' })
+})
+
+test('react: an Expo app with no react-dom gets the tool\'s matched pair', () => {
+  assert.deepEqual(pickReact({ app: '19.1.0', appDom: null, own: '19.2.7' }), { from: 'own' })
+})
+
+test('react: a hoisted react-dom on another major is ignored, not trusted', () => {
+  // The monorepo trap: some unrelated tool pulled react-dom 18 into the root
+  // node_modules. Bundling it against the app's React 19 renders nothing.
+  assert.deepEqual(pickReact({ app: '19.1.0', appDom: '18.3.1', own: '19.2.7' }), { from: 'own' })
+})
+
+test('react: an app on another major is told exactly what to install', () => {
+  const { error } = pickReact({ app: '18.3.1', appDom: null, own: '19.2.7' })
+  assert.match(error, /npm install --save-dev react-dom@18/)
 })
