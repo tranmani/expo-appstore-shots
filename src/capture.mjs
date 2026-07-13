@@ -111,13 +111,14 @@ export async function capture({ browser, config, devices, port, rawDir }) {
 
       // Measured after the shot, on the page that produced it, so what is
       // reported is exactly what is in the PNG.
-      const probe = await page.evaluate(PROBE)
+      const probe = await page.evaluate(`(${PROBE})(${JSON.stringify(screen.title ?? null)})`)
 
       findings.push({
         device: device.id,
         screen: screen.id,
         clipped: probe.clipped,
         overlaps: probe.overlaps,
+        echoedTitle: probe.echoedTitle,
         scrollables: scrolled.scrollables,
         missingAnchor: scrolled.missingAnchor,
         // 'top' is the default and asks nothing of the screen, so a screen with

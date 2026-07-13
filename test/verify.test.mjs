@@ -338,3 +338,19 @@ test('flatness: a row of text is not an empty row', () => {
   }
   assert.equal(flatness(p).rows, 0, 'a row with type in it is content')
 })
+
+test('report: a nav title that only repeats the screen’s own heading', () => {
+  // The trap the config walks you into. A tab screen renders with no header at all —
+  // its header lives in a layout this harness never mounts — the run says so, you add
+  // a title, and now the frame carries the word twice: once small in the bar, once
+  // large as the screen's own h1. Nothing errors. The frame is just wrong.
+  const lines = report([{ device: 'iphone-6.9', screen: 'leaderboard', echoedTitle: 'Leaderboard' }])
+  assert.equal(lines.length, 1)
+  assert.match(lines[0], /says "Leaderboard" and the screen says it again/)
+  assert.match(lines[0], /header: false/)
+})
+
+test('report: a screen whose heading is its own is not accused of anything', () => {
+  const lines = report([{ device: 'iphone-6.9', screen: 'station', echoedTitle: null }])
+  assert.deepEqual(lines, [])
+})

@@ -209,6 +209,12 @@ always one of them.
 one-screen harness never mounts, while the root layout hides the header for the
 whole tab group. Give the screen a `title`.
 
+**The screen now says its own name twice** — the trap on the other side of that
+one. If the screen already prints its name as a heading, a `title` puts it in the
+bar as well and the frame carries the word twice, once small and once large, with
+nothing technically wrong anywhere. Use `header: false` instead: the screen titles
+itself. Every run measures the laid-out page and says so when this happens.
+
 ## Requirements
 
 Node 20+, and Chromium (`npx playwright install chromium`, ~130MB, once). Your

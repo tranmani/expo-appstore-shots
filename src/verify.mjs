@@ -23,11 +23,13 @@ import { readFile } from 'node:fs/promises'
  * measure. `scrollWidth > clientWidth` is the same question the browser asked
  * when it decided to draw the ellipsis.
  */
-export const PROBE = `(() => {
+export const PROBE = `((title) => {
   const out = {
     clipped: [],
     overlaps: [],
     scrollables: 0,
+    // A navigation title that only repeats a heading the screen already prints.
+    echoedTitle: null,
     // lucide lives only in the page, so the tab bar checks the icon names there
     // and leaves the result here for the run to report.
     iconNames: window.__SHOTS_ICON_NAMES__ || [],
@@ -77,8 +79,36 @@ export const PROBE = `(() => {
       }
     }
   }
+
+  // The screen says its own name, and the nav bar says it again directly above.
+  //
+  // This is a trap the config walks you into: a tab screen renders with no header at
+  // all (its header lives in the tabs layout, which is never mounted), the run tells
+  // you so, you add a title — and if the screen already prints its name as a heading,
+  // the frame now carries the word twice, once small and once large, and nothing
+  // anywhere is technically wrong. \`header: false\` is the right answer whenever the
+  // screen titles itself, and only the laid-out page knows which.
+  //
+  // Matched on the configured title rather than on a marker in this tool's own header
+  // stub, because an app that installs its own header component — which the first
+  // version of this check assumed away, and which is exactly the app it was written
+  // for — never renders that stub at all.
+  if (title) {
+    const band = window.innerHeight * 0.45
+    const hits = []
+    for (const el of document.querySelectorAll('*')) {
+      if (el.children.length) continue
+      if ((el.textContent || '').trim() !== title) continue
+      const box = el.getBoundingClientRect()
+      if (box.width && box.top >= 0 && box.top < band) hits.push(box.top)
+    }
+    // Twice near the top of the same screen: once in the bar, once as the heading. A
+    // single occurrence is just the header doing its job.
+    if (hits.length > 1) out.echoedTitle = title
+  }
+
   return out
-})()`
+})`
 
 /**
  * Dead space: the run of blank rows at the *bottom* of the screen.
@@ -211,7 +241,16 @@ export function report(findings) {
     }
     if (f.flat) {
       const pct = Math.round(f.flat.share * 100)
-      lines.push(`${where}: ${pct}% of the frame is one flat colour (${f.flat.colour}) — dead space?`)
+      // "of the screen", not "of the frame": this is measured on the raw shot of the
+      // app, before the brand ground is composed around it — and the brand ground is
+      // meant to be flat, so saying "frame" invites you to dismiss a true finding.
+      lines.push(`${where}: ${pct}% of the screen is one flat colour (${f.flat.colour}) — dead space?`)
+    }
+    if (f.echoedTitle) {
+      lines.push(
+        `${where}: the header says "${f.echoedTitle}" and the screen says it again ` +
+          `right underneath — set header: false, this screen titles itself`,
+      )
     }
     for (const o of f.overlaps ?? []) {
       lines.push(`${where}: the ${o.zone} is drawn over "${o.text}"`)
