@@ -214,7 +214,36 @@ Then check by eye what no tool can:
   tab bar, and the font — unless you pointed `fonts` at the app's own faces, in
   which case say that you did.
 
-## 8. What to say when you are done
+## 8. If they need the store graphics too
+
+Publishing on Play needs a **512×512 icon** and a **1024×500 feature graphic** before
+the listing will go live; App Store Connect wants a **1024×1024 marketing icon**. When
+somebody asks you for one of those, do not draw it — `npx expo-appstore-shots graphics`
+makes all three from the app's own icon and the brand already in the config.
+
+Add a `graphics` block and run it. Then **look at what came out**, exactly as with the
+frames:
+
+- The icon should be the app's real tile, full-bleed, corners untouched (both stores
+  mask it themselves — round it yourself and it gets rounded twice).
+- The feature graphic should show the **bare mark** on the brand ground. If it shows a
+  hard-edged square of white floating in the middle, the app has no bare mark and the
+  tile was used instead — the run says so. Find the transparent one (`logo-mark.png`,
+  or a mark inside the app's own logo component) and point `graphics.mark` at it.
+
+Two failure modes to take seriously, because no store rejects them — the author finds
+out from the listing:
+
+- Play **crops** the feature graphic. A long app name is the usual casualty. The run
+  measures the real laid-out box and warns.
+- A listing with a promo video gets a **play button stamped over the centre** of the
+  feature graphic. Set `promoVideo: true` and the composition stacks out of its way.
+
+If the app has neither a wordmark you can copy nor a one-line description, **ask** —
+this is the store listing, and inventing a tagline for somebody's product is not your
+call.
+
+## 9. What to say when you are done
 
 Where the frames are, what each one shows, what you seeded, and anything you
 noticed while doing it — a truncated label, an empty state, a screen that does
@@ -231,6 +260,7 @@ zoom. That is worth reporting.
 | `shots/fixtures.mjs` | What the backend answers. Route table + optional WebSocket script. |
 | `.shots/` | Build artifacts and raw screens. Git-ignore it. |
 | `appstore/` | The frames to upload. |
+| `appstore/graphics/` | The Play icon, feature graphic and marketing icon (`graphics`). |
 
 Devices: `iphone-6.9` (1290×2796, required), `iphone-6.5` (1284×2778),
 `ipad-13` (2064×2752), `ipad-12.9` (2048×2732). Only ship iPad frames if the app

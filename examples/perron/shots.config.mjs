@@ -60,6 +60,20 @@ export default {
     statusBar: { time: '9:41', tint: '#181A17' },
   },
 
+  // The listing art. It inherits the ground, the dots and the typeface from `frame`
+  // above, so the feature graphic cannot end up in a different green from the
+  // screenshots sitting next to it on the same store page. The icon is not stated: it
+  // is `assets/icon.png`, which is where Expo already keeps it.
+  graphics: {
+    targets: ['play-icon', 'play-feature', 'ios-marketing'],
+    outDir: '../../appstore-v2/graphics',
+    iconBackground: '#FDFBF8',
+    accent: '#1C6B4F',
+    wordmark: 'Perron',
+    tagline: 'Chat with the platform you are standing on.',
+    note: 'Anonymous. Only while you are there.',
+  },
+
   slides: [
     { screen: 'station', ground: 'dark', file: '01-station.png',
       headline: 'Every station has a room.',

@@ -8,6 +8,9 @@
  *   npx expo-appstore-shots --raw         stop after shooting (no frames)
  *   npx expo-appstore-shots --screen home --device iphone-6.9
  *                                         shoot a subset, for iterating
+ *   npx expo-appstore-shots graphics      the Play icon, feature graphic and
+ *                                         marketing icon — the listing art that
+ *                                         is not a screenshot
  *
  * Every run ends with what is wrong with the pictures: clipped text, dead space,
  * content under the chrome, fixtures nobody asked for. A clean run is not a
@@ -17,7 +20,7 @@ import { chromium } from 'playwright'
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, resolve } from 'node:path'
+import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { bundle } from './build.mjs'
 import { capture } from './capture.mjs'
@@ -25,6 +28,7 @@ import { compose } from './compose.mjs'
 import { applyFilters } from './args.mjs'
 import { ConfigError, normalise } from './config.mjs'
 import { resolveDevices } from './devices.mjs'
+import { renderGraphics } from './graphics.mjs'
 import { suggest } from './icons.mjs'
 import { scan } from './scan.mjs'
 import { serve } from './server.mjs'
@@ -42,7 +46,47 @@ function fail(msg) {
 }
 
 if (args[0] === 'init') await init()
+else if (args[0] === 'graphics') await graphics()
 else await shoot()
+
+/**
+ * The listing artwork that is not a screenshot: the Play icon, the feature graphic, the
+ * App Store marketing icon.
+ *
+ * No bundle and no mock backend — nothing here renders the app, it renders the app's
+ * brand — so this is a browser launch and about a second, and it can be re-run every
+ * time the tagline changes.
+ */
+async function graphics() {
+  const config = await loadConfig()
+
+  const browser = await chromium.launch(
+    process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {},
+  )
+  try {
+    step(`drawing ${config.graphics.targets.length} store graphic(s)`)
+    const { written, problems } = await renderGraphics({
+      browser,
+      config,
+      fontCss: await fontCss(config),
+    })
+
+    if (written.length) console.log(`\n${written.length} graphic(s) in ${config.graphics.outDir}/`)
+    for (const w of written) {
+      const [W, H] = w.spec.size
+      console.log(`  ${basename(w.file)}  ${W}×${H}  ${(w.bytes / 1024).toFixed(0)} KB  — ${w.spec.label}`)
+      if (w.spec.mask) console.log(`      ${w.spec.mask}`)
+    }
+
+    if (problems.length) {
+      console.log(`\n${problems.length} thing(s) worth looking at before you upload these:`)
+      for (const p of problems) console.log(`  ! ${p}`)
+    }
+    console.log(`\nOpen them. A clean run is not a correct graphic.`)
+  } finally {
+    await browser.close()
+  }
+}
 
 async function init() {
   const config = resolve(cwd, 'shots.config.mjs')
@@ -139,15 +183,22 @@ ${routes}
 `
 }
 
-async function shoot() {
+async function loadConfig() {
   const configPath = resolve(cwd, args.find((a) => a.endsWith('.mjs')) ?? 'shots.config.mjs')
   if (!existsSync(configPath)) fail('no shots.config.mjs here — run `npx expo-appstore-shots init` first')
+  try {
+    return normalise((await import(pathToFileURL(configPath).href)).default, configPath)
+  } catch (e) {
+    if (e instanceof ConfigError) fail(e.message)
+    throw e
+  }
+}
 
-  let config
+async function shoot() {
+  let config = await loadConfig()
   let chosen
   let rendered
   try {
-    config = normalise((await import(pathToFileURL(configPath).href)).default, configPath)
     config = applyFilters(config, args)
     ;({ chosen, rendered } = resolveDevices(config.devices))
   } catch (e) {

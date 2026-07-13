@@ -1,7 +1,7 @@
 {
   "name": "expo-appstore-shots",
-  "version": "0.2.0",
-  "description": "Generate App Store screenshots from an Expo app's own code — no Mac, no simulator, no mock-ups.",
+  "version": "0.3.0",
+  "description": "Generate App Store screenshots and store graphics from an Expo app's own code — no Mac, no simulator, no mock-ups.",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -19,7 +19,10 @@
     "app-store",
     "screenshots",
     "fastlane",
-    "playwright"
+    "playwright",
+    "google-play",
+    "feature-graphic",
+    "app-icon"
   ],
   "repository": {
     "type": "git",

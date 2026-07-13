@@ -19,6 +19,63 @@ npx expo-appstore-shots             # → appstore/6.9/01-home.png, …
 Output is the exact pixel size App Store Connect demands (1290×2796 and friends),
 PNG, no alpha channel — ready to upload.
 
+It also draws the listing art that is *not* a screenshot, from the same brand:
+
+```bash
+npx expo-appstore-shots graphics    # → Play icon 512², feature graphic 1024×500,
+                                    #   App Store marketing icon 1024²
+```
+
+## Store graphics
+
+The stores want more than screens. Play will not publish without a **512×512 icon**
+and a **1024×500 feature graphic**; App Store Connect wants a **1024×1024 marketing
+icon**. These are the assets people open a drawing program for — and the assets that
+end up in a slightly different green from the app, in a typeface the app does not
+use, because they were drawn somewhere your tokens do not reach.
+
+`graphics` makes them from what you already have. The icon is your `assets/icon.png`.
+The ground, the dots and the typeface are the ones your screenshot frames use. Nothing
+is redrawn, so nothing can drift — and the icon, the feature graphic and the screenshots
+sitting side by side on one store page are finally the same brand.
+
+```js
+graphics: {
+  targets: ['play-icon', 'play-feature', 'ios-marketing'],
+  wordmark: 'Perron',
+  tagline: 'Chat with the platform you are standing on.',
+  note: 'Anonymous. Only while you are there.',
+  accent: '#1C6B4F',
+  iconBackground: '#FDFBF8',
+  // icon: 'assets/icon.png'       — found automatically
+  // mark: 'assets/logo-mark.png'  — found automatically; see below
+  // promoVideo: true              — if your listing has one; see below
+}
+```
+
+**An icon tile and a bare mark are not the same picture.** `icon` is the finished
+square tile — art plus its own ground — and it is what both stores want, full-bleed,
+corners left alone (they mask it themselves; a pre-rounded icon gets rounded twice).
+The feature graphic wants the **mark alone**, on the feature graphic's ground. Give it
+the tile instead and you get a hard-edged square of a slightly-wrong white floating in
+the middle of your brand surface. If your app has no bare mark the tile is used and
+rounded, so it at least reads as an app icon on purpose — and the run says so.
+
+**Two things no store will reject, which is worse — you find out from the listing:**
+
+- Play **crops** the feature graphic to other aspect ratios in placements you do not
+  choose. Anything near an edge gets cut. Every run measures the laid-out lockup and
+  warns if it reaches within 6% of one — which is how a long app name gets caught,
+  because a wordmark cannot wrap and so it is the thing that runs off.
+- If your listing has a **promo video**, Play draws a play button over the *centre* of
+  the feature graphic. Centring your logo is the natural thing to do and it is exactly
+  wrong. Set `promoVideo: true` and the composition stacks instead of centring, so the
+  lockup clears the button — and it is checked, not assumed.
+
+Every asset is written at the exact pixel size, opaque (Chromium always writes an alpha
+channel; App Store Connect refuses one and will not tell you which file), and checked
+against the store's byte ceiling before you upload it.
+
 ## What is real, and what is not
 
 **Real:** everything inside the phone. Your screens run their own code — your
