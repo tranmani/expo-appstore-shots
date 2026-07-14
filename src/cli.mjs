@@ -246,6 +246,26 @@ async function shoot() {
     // differently so neither hides in the other's noise.
     for (const p of problems) console.warn(`  ✗ ${p}`)
 
+    // A SCREEN THAT THREW MUST NOT BECOME A FILE.
+    //
+    // This is the failure that matters most in a tool whose output goes straight onto a storefront.
+    // A React version mismatch made every screen throw; the run printed twenty-four ✗ lines, went on
+    // to compose twenty-four store frames out of blank white rectangles, wrote them over the good
+    // ones, and exited 0. Everything about that run said "success" except the pictures, and nobody
+    // reads pictures they have just been told are finished.
+    //
+    // A screenshot tool has exactly one duty: never hand back a frame that is not a screenshot.
+    // Composing is skipped, the existing frames on disk are left alone, and the exit code says no.
+    if (problems.length > 0) {
+      console.error(
+        `\n${problems.length} screen(s) did not render.\n\n` +
+          `No frames were written — the ones already in ${config.outDir}/ are untouched.\n` +
+          `A blank frame that ships is worse than a run that fails, so this fails.\n`,
+      )
+      await browser.close()
+      process.exit(1)
+    }
+
     if (!args.includes('--raw')) {
       step('composing store frames')
       const written = await compose({

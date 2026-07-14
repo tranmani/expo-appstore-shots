@@ -23,27 +23,53 @@ const version = async (pkgJson) => JSON.parse(await readFile(pkgJson, 'utf8')).v
 /**
  * Which react / react-dom pair to bundle.
  *
- * They must be one copy each and the same major, or React throws #527 on the
- * first render and every screenshot comes out blank. Two traps make this less
- * obvious than it sounds:
+ * THEY MUST BE THE SAME EXACT VERSION, not merely the same major. React compares the two at the
+ * first render and throws #527 — "Incompatible React versions" — on any difference at all, and a
+ * thrown render is a BLANK PNG. 19.1.0 against 19.2.7 is enough to lose every screenshot.
  *
- *  - An Expo app usually has **no** react-dom at all (it never renders to a DOM).
- *  - A monorepo often has a *hoisted* react-dom that some unrelated tool pulled
- *    in, on a completely different major from the app's react. Resolving it and
- *    trusting it is exactly how you get a blank PNG.
+ * That distinction is the whole bug this function was rewritten for. It used to compare majors, on
+ * the reasonable-sounding theory that 19.x is 19.x, and it let two different patches of React 19
+ * through to the bundler. Reasonable-sounding is not what React checks.
  *
- * So the app's pair is used only when it is internally consistent; otherwise the
- * tool's own matched pair is, which is safe whenever the majors agree.
+ * Three traps, and the third is the one that bit:
+ *
+ *  - An Expo app usually has NO react-dom at all. It never renders to a DOM.
+ *
+ *  - A monorepo often has a HOISTED react-dom that some unrelated tool dragged in, on a completely
+ *    different major from the app's react. Resolving it and trusting it is how you get a blank PNG.
+ *
+ *  - THE TOOL'S OWN PAIR CAN BE MISMATCHED TOO, and that is not hypothetical: this package declared
+ *    `react: ^19.0.0` and `react-dom: ^19.0.0` as two INDEPENDENT ranges, so a fresh install was
+ *    free to satisfy them with different resolutions — and did, landing react 19.1.0 next to
+ *    react-dom 19.2.7. The tool then handed its own broken pair to the bundler and produced
+ *    twenty-four blank frames without a word. The versions are pinned now, and this checks anyway:
+ *    a dependency range is a promise somebody else keeps.
  */
-export function pickReact({ app, appDom, own }) {
-  if (appDom && app && major(appDom) === major(app)) return { from: 'app' }
+export function pickReact({ app, appDom, own, ownDom }) {
+  // The tool's own pair is the fallback for everything below, so if IT is broken there is no safe
+  // ground to stand on. Say so, loudly, rather than render nothing.
+  if (ownDom && own !== ownDom) {
+    return {
+      error:
+        `expo-appstore-shots has a broken React install: react ${own} but react-dom ${ownDom}.\n` +
+        `They must be identical or React throws #527 and every screenshot comes out blank.\n\n` +
+        `Reinstall the tool. If you are running it from a checkout, delete node_modules and install again.\n`,
+    }
+  }
 
+  // The app's own pair, but only if it is INTERNALLY CONSISTENT — exactly equal, not merely the
+  // same major.
+  if (appDom && app && appDom === app) return { from: 'app' }
+
+  // No usable pair in the app. Fall back to the tool's, which is safe as long as the majors agree:
+  // the app's code is compiled against whatever React ends up in the bundle, and 19.x is 19.x as far
+  // as the API is concerned. It is only the react/react-dom PAIR that has to match exactly.
   if (app && major(app) !== major(own)) {
     return {
       error:
         `This app is on React ${app} and expo-appstore-shots ships React ${own}.\n` +
         `Install a matching react-dom in the app and it will be used instead:\n\n` +
-        `  npm install --save-dev react-dom@${major(app)}\n`,
+        `  npm install --save-dev react-dom@${app}\n`,
     }
   }
 
@@ -219,10 +245,13 @@ export async function bundle(config) {
   const appReactDom = fromApp('react-dom', projectRoot)
   const ownReact = own.resolve('react/package.json')
 
+  const ownReactDom = own.resolve('react-dom/package.json')
+
   const pick = pickReact({
     app: appReact && (await version(appReact)),
     appDom: appReactDom && (await version(appReactDom)),
     own: await version(ownReact),
+    ownDom: await version(ownReactDom),
   })
 
   if (pick.error) throw new Error(pick.error)

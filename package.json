@@ -1,7 +1,7 @@
 {
   "name": "expo-appstore-shots",
-  "version": "0.3.1",
-  "description": "Generate App Store screenshots and store graphics from an Expo app's own code — no Mac, no simulator, no mock-ups.",
+  "version": "0.3.2",
+  "description": "Generate App Store screenshots and store graphics from an Expo app's own code \u2014 no Mac, no simulator, no mock-ups.",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -36,8 +36,8 @@
     "esbuild": "^0.24.0",
     "playwright": "^1.49.0",
     "pngjs": "^7.0.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "react-native-web": "^0.21.0",
     "ws": "^8.18.0"
   },

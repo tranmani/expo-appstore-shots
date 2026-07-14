@@ -118,21 +118,53 @@ test('png: the alpha channel is dropped, and no pixel changes value', () => {
   })
 })
 
-test('react: an app with a matching react-dom supplies both', () => {
-  assert.deepEqual(pickReact({ app: '19.1.0', appDom: '19.1.0', own: '19.2.7' }), { from: 'app' })
+test('react: an app with an EXACTLY matching react-dom supplies both', () => {
+  assert.deepEqual(
+    pickReact({ app: '19.1.0', appDom: '19.1.0', own: '19.2.7', ownDom: '19.2.7' }),
+    { from: 'app' },
+  )
 })
 
 test('react: an Expo app with no react-dom gets the tool\'s matched pair', () => {
-  assert.deepEqual(pickReact({ app: '19.1.0', appDom: null, own: '19.2.7' }), { from: 'own' })
+  assert.deepEqual(
+    pickReact({ app: '19.1.0', appDom: null, own: '19.2.7', ownDom: '19.2.7' }),
+    { from: 'own' },
+  )
 })
 
 test('react: a hoisted react-dom on another major is ignored, not trusted', () => {
   // The monorepo trap: some unrelated tool pulled react-dom 18 into the root
   // node_modules. Bundling it against the app's React 19 renders nothing.
-  assert.deepEqual(pickReact({ app: '19.1.0', appDom: '18.3.1', own: '19.2.7' }), { from: 'own' })
+  assert.deepEqual(
+    pickReact({ app: '19.1.0', appDom: '18.3.1', own: '19.2.7', ownDom: '19.2.7' }),
+    { from: 'own' },
+  )
+})
+
+test('react: a react-dom on the same MAJOR but a different patch is still refused', () => {
+  // THE BUG. This used to compare majors, and 19.1.0 against 19.2.7 sailed through — but React
+  // compares the two EXACTLY and throws #527 on any difference, which means a blank PNG. The app's
+  // pair is only usable when it is identical; otherwise fall back to the tool's own matched pair.
+  assert.deepEqual(
+    pickReact({ app: '19.1.0', appDom: '19.2.7', own: '19.2.7', ownDom: '19.2.7' }),
+    { from: 'own' },
+  )
+})
+
+test('react: the TOOL\'s own broken pair is caught, not handed to the bundler', () => {
+  // Also the bug, and the half nobody would have looked for. This package declared react and
+  // react-dom as two independent ^19.0.0 ranges, so an install was free to satisfy them with
+  // different resolutions — and did: react 19.1.0 beside react-dom 19.2.7. The tool then bundled
+  // its OWN mismatched pair and produced twenty-four blank frames without a word. The versions are
+  // pinned now; this is the belt to that pair of braces, because a dependency range is a promise
+  // that somebody else keeps.
+  const { error } = pickReact({ app: '19.1.0', appDom: null, own: '19.1.0', ownDom: '19.2.7' })
+  assert.match(error, /broken React install/)
+  assert.match(error, /19\.1\.0/)
+  assert.match(error, /19\.2\.7/)
 })
 
 test('react: an app on another major is told exactly what to install', () => {
-  const { error } = pickReact({ app: '18.3.1', appDom: null, own: '19.2.7' })
+  const { error } = pickReact({ app: '18.3.1', appDom: null, own: '19.2.7', ownDom: '19.2.7' })
   assert.match(error, /npm install --save-dev react-dom@18/)
 })

@@ -11,7 +11,7 @@
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { readFile, rm } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -80,6 +80,41 @@ test('the frame is the app, not an empty canvas', { skip: skip() }, async () => 
   // The caption's ground is the configured dark green.
   const [r, g, b] = [png.data[0], png.data[1], png.data[2]]
   assert.deepEqual([r, g, b], [23, 81, 63])
+})
+
+test('a screen that throws writes NO frame, and leaves the good ones alone', { skip: skip() }, async () => {
+  // THE FAILURE THIS TOOL EXISTS TO NOT HAVE.
+  //
+  // A React version mismatch made every screen throw. The run printed its ✗ lines, went on to
+  // compose twenty-four store frames out of blank white rectangles, wrote them over the good ones,
+  // and exited 0. Everything about that run said "success" except the pictures — and nobody
+  // re-examines pictures they have just been told are finished. They very nearly reached a store
+  // listing.
+  //
+  // A screenshot tool has exactly one duty: never hand back a frame that is not a screenshot.
+  const screen = resolve(app, 'src/app/index.tsx')
+  const good = await readFile(out)
+  const original = await readFile(screen, 'utf8')
+
+  await writeFile(screen, `throw new Error('boom')\n${original}`)
+  try {
+    const res = await run(process.execPath, [cli, 'shots.config.mjs'], {
+      cwd: app,
+      timeout: 300_000,
+    }).catch((e) => e)
+
+    assert.notEqual(res.code, 0, 'a crashed render must not exit 0')
+    assert.match(
+      `${res.stdout ?? ''}${res.stderr ?? ''}`,
+      /did not render/,
+      'it must say which screens failed',
+    )
+
+    // And — the whole point — the frame already on disk is untouched.
+    assert.deepEqual(await readFile(out), good, 'a failed run overwrote a good frame')
+  } finally {
+    await writeFile(screen, original)
+  }
 })
 
 function skip() {
