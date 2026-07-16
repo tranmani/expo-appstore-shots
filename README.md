@@ -341,15 +341,17 @@ or, better, in the app's `package.json`:
 
 **Works with:** expo-router (Stack and native tabs) and **React Navigation**
 (native-stack, stack, bottom-tabs, drawer, elements); Reanimated 3/4, Gesture
-Handler, FlashList, react-native-svg, lucide-react-native (any version),
-**@shopify/react-native-skia**, **react-native-maps**, **expo-sqlite**,
-**react-native-fast-confetti**, **react-native-android-widget**; expo-location /
-secure-store / haptics / notifications / constants / clipboard / crypto / device
-/ localization / task-manager / status-bar / file-system (both the `File` API and
-the flat one) / web-browser / auth-session / linking; react-native-iap,
-AsyncStorage. Anything else, stub it yourself in three lines with `config.stubs`
-— and a native package that reaches for `react-native/Libraries/…` internals
-resolves to a no-op instead of ending the run.
+Handler, **@gorhom/bottom-sheet**, FlashList, react-native-svg,
+lucide-react-native (any version), **@shopify/react-native-skia**,
+**react-native-maps**, **expo-sqlite**, **react-native-fast-confetti**,
+**react-native-android-widget**; expo-location / secure-store / haptics /
+notifications / constants / clipboard / crypto / device / localization /
+task-manager / status-bar / camera / image-picker / media-library / file-system
+(both the `File` API and the flat one) / web-browser / auth-session / linking;
+react-native-iap, AsyncStorage. Anything else, stub it yourself in three lines
+with `config.stubs` — and a native package that reaches for
+`react-native/Libraries/…` internals resolves to a no-op instead of ending the
+run.
 
 "Works with" means *it bundles and renders*, not that it draws. A Skia canvas, a
 map and a home-screen widget have no browser equivalent and are listed under
