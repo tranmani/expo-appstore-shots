@@ -72,6 +72,21 @@ the tool's own dependencies come back unresolvable — `playwright`, `esbuild`,
   (`rm -rf node_modules && pnpm install`) rather than expecting an incremental add
   to link it.
 
+**pnpm does not run esbuild's install script**, and says so in one grey line
+nobody reads: `Ignored build scripts: esbuild`. The binary is then not set up and
+the first run fails somewhere that does not mention esbuild at all. Fix it once,
+before the first run:
+
+```sh
+pnpm rebuild esbuild
+```
+
+Better, so it survives the next fresh install — in the app's `package.json`:
+
+```json
+{ "pnpm": { "onlyBuiltDependencies": ["esbuild"] } }
+```
+
 Confirm with `npx expo-appstore-shots --help`. If that runs, the install is sound.
 
 ---
@@ -86,9 +101,20 @@ which five screens sell the app. Cut it down and put real data in the fixtures.
 
 Then confirm each of these by hand, because the scan guesses and you should not:
 
+0. **Which router the app uses**, because it changes the answer to (1) and the
+   scan only understands one of them. `@react-navigation/native` in
+   `package.json` and no `app/` directory means a **React Navigation** app: there
+   is no `_layout.tsx` to point at, `init --scan` will find no routes, and you
+   write the config by hand. Its screens are ordinary components under
+   `src/screens/`; its route names are the `<Stack.Screen name="…">` strings in
+   `App.tsx`.
 1. **The root layout** — usually `app/_layout.tsx` or `src/app/_layout.tsx`. This
    is `rootLayout` in the config. It holds the providers, the theme and the
-   header; mounting a screen without it gives you an unstyled screen.
+   header; mounting a screen without it gives you an unstyled screen. On a React
+   Navigation app this is **`App.tsx`**: the tool's navigator stubs stop the tree
+   at the navigator and render the screen being shot, so everything above it —
+   providers, theme, query client, and any bootstrap they run — mounts for real.
+   Omitting `rootLayout` gives you a bare screen and a header, and the run says so.
 2. **The screens worth showing.** `ls app/**/*.tsx`. Pick the ones that carry the
    product: the main list, the thing the app is *for*, the payoff screen. Skip
    settings, legal, and empty states.
@@ -191,6 +217,25 @@ login wall. Each of those is a fixture you have not written yet.
   APIs) versus milliseconds is the single most common fixture bug, and it does
   not error — it silently renders the wrong hour.
 
+**When a screen stays empty and no fixture explains it**, the data does not
+arrive over `fetch` and no route table will ever reach it. Stop adding fixtures
+and check for one of these — all three look identical from the outside:
+
+- **The app is offline-first.** It reads a SQLite-backed store, and `expo-sqlite`
+  answers "no rows" here. Point `config.stubs` at the app's own repository /
+  `db.ts` and return fixtures from one layer up (the screens then run their real
+  code paths), or set the store directly in `config.setup`.
+- **A root bootstrap never ran.** The harness mounts one screen, not the app
+  root. If the app fetches-and-hydrates in a root lifecycle hook and gates
+  content on an `isInitializing` flag, the screen renders its skeleton forever.
+  Point `rootLayout` at the file that runs it, or call it from `config.setup`.
+- **A feature gate.** Content behind a subscription or entitlement check renders
+  empty even with data present. Grant it in `config.setup`.
+
+`config.setup` is a module of yours that runs in the page before the first render
+(and is awaited), so it can import the app's real stores and set them. See
+"Seeding what `fetch` cannot reach" in the README.
+
 Write data a real user could plausibly have. Never lorem ipsum, never a name
 that suggests a real person, and never a fuller list than the app's own rules
 allow (if a feature only shows results within 250m, do not seed five).
@@ -222,6 +267,10 @@ The run tells you what it can. Read the report at the end:
 | `! … had no fixture` | A route the app called and you did not seed. The empty state in the frame is this. |
 | `! … fixture(s) were never requested` | The mirror image, and almost always a **typo in a fixture path**. |
 | `! … lucide has no icon "BarChart3"` | A renamed icon, rendering as a hole in the tab bar. Take the suggestion. |
+| `! this app depends on lucide-react-native, but it could not be resolved` | **Every icon in the app will be missing.** Run the app's install. Do not ship these frames. |
+| `! Import "X" will always be undefined` | A stub is missing a name the app imports. It is `undefined` at runtime, so it throws at the *call* — often inside a line that looks guarded. Add it with `stubs`. |
+| `! :8788 is busy — using :8789` | A previous run is still holding the port. Harmless; `kill $(lsof -ti :8788)` to tidy up. |
+| `! no config.rootLayout` | You are shooting a bare screen with no providers above it. Right for React Navigation with no root state; wrong for expo-router. |
 
 Then check by eye what no tool can:
 
@@ -371,4 +420,9 @@ viewports, three folders. That is not a bug.
 | `runtime.colorScheme: 'dark'` | Shoots dark mode. Nearly free, and dark frames sell. |
 | `screens[].scroll` | `'top'` (default), `'end'`, a pixel offset, or a `testID` to scroll to. Warns if the screen has nothing that scrolls. |
 | `screens[].title` / `header` | See the tab-screen trap above. |
+| `setup: 'shots/setup.ts'` | A module that runs in the page **before the first render**, awaited. The only way to seed what `fetch` cannot reach: a store, a local database, an entitlement, a bootstrap the harness never ran. |
+| `rootLayout` | Optional. Omit it for a bare screen + header; point it at `App.tsx` for a React Navigation app so its providers mount. |
+| `stubs` / `redirect` / `redirectFile` | Replace a package / a module by import path / a module by its **resolved** path. `redirect` cannot see through a barrel re-export; `redirectFile` can. Your `stubs` beat the tool's own aliases. |
+| `loaders: { '.lottie': 'dataurl' }` | An asset format esbuild has no loader for. `.webp`, `.avif`, `.woff2` and the usual images are already covered. |
+| `apiPort` | Setting it means it. A *default* that is busy moves to the next free port; a number you typed fails instead, because you typed it for a reason. |
 | `tabBar.style` | `'capsule'` (expo-router native tabs, iOS 26) or `'bar'` (React Navigation's flat JS bar). Pick the one the app actually ships. |

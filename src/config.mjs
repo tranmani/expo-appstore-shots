@@ -6,8 +6,14 @@
  */
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export class ConfigError extends Error {}
+
+const here = dirname(fileURLToPath(import.meta.url))
+
+/** The root layout for an app that has none — a React Navigation app. See stubs/root-layout.tsx. */
+export const BUILTIN_ROOT_LAYOUT = resolve(here, 'stubs', 'root-layout.tsx')
 
 export function normalise(config, configPath) {
   // Every path in the config is relative to the config file itself — one rule,
@@ -21,6 +27,9 @@ export function normalise(config, configPath) {
     outDir: at(config.outDir ?? 'appstore'),
     workDir: at(config.workDir ?? '.shots'),
     apiPort: config.apiPort ?? 8788,
+    // Whether the port was *chosen* or merely defaulted. A default may move out
+    // of the way of a stale run; a number someone typed may not. See freePort().
+    apiPortExplicit: config.apiPort !== undefined,
     devices: config.devices ?? ['iphone-6.9', 'iphone-6.5'],
     api: { fixtures: at(config.api?.fixtures ?? 'shots/fixtures.mjs') },
     slides: config.slides ?? [],
@@ -28,10 +37,35 @@ export function normalise(config, configPath) {
 
   out.graphics = normaliseGraphics(config, at, out.projectRoot)
 
-  if (!out.rootLayout) throw new ConfigError('config.rootLayout is required (e.g. "src/app/_layout.tsx")')
   if (!out.screens?.length) throw new ConfigError('config.screens is empty')
 
   out.warnings = []
+
+  /**
+   * No root layout is a legitimate answer now, and it used to be a hard error.
+   *
+   * It was written when every app this tool had met was an expo-router app,
+   * where `app/_layout.tsx` always exists and pointing at it is free. A React
+   * Navigation app has no such file — its root is an `App.tsx` that builds a
+   * `NavigationContainer` — so the tool's first question was one that kind of
+   * app could not answer, and the whole class of them stopped there.
+   *
+   * The built-in layout renders the tool's own `Stack`, which is the same
+   * machinery the expo-router path uses. It is the minimum, and the note says
+   * so: nothing of the app sits above the screen, so an app that needs its
+   * providers should point `rootLayout` at a file that mounts them (`App.tsx`
+   * itself usually works — the navigator factories resolve to that same Stack).
+   */
+  if (!out.rootLayout) {
+    out.rootLayout = BUILTIN_ROOT_LAYOUT
+    out.warnings.push(
+      `no config.rootLayout: using the built-in one, which renders your screen and a header and ` +
+        `nothing else.\n      That is right for a React Navigation app with no root providers. If ` +
+        `this is an expo-router app, point rootLayout at "app/_layout.tsx"; if your screens need ` +
+        `providers (a theme, a query client, a store), point it at the file that mounts them.`,
+    )
+  }
+
 
   const ids = new Set()
   for (const screen of out.screens) {

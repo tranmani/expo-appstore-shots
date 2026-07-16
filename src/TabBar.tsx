@@ -11,7 +11,21 @@
  * tab bar, set `tabBar.enabled: false` and this disappears.
  */
 import { StyleSheet, View, Text } from 'react-native'
-import { icons } from 'lucide-react-native'
+/**
+ * A NAMESPACE IMPORT, AND IT HAS TO STAY ONE.
+ *
+ * This was `import { icons } from 'lucide-react-native'`, which read better and
+ * worked for years — lucide exported an `icons` object keyed by name. It stopped
+ * doing that: since 0.544 the icons are individual PascalCase named exports and
+ * there is no `icons` object at all, so `icons` came back `undefined` and every
+ * glyph in the bar turned into a grey dot. No error — the code that reads it
+ * (`item.icon in icons`) fails just as quietly.
+ *
+ * The namespace is the same lookup table in both worlds: old lucide puts `icons`
+ * *and* the individual names in it, new lucide puts only the names. Reading it
+ * this way is version-proof in a way the destructure never was.
+ */
+import * as icons from 'lucide-react-native'
 import { runtime } from './stubs/runtime'
 
 /** iOS's own selected tint, sampled from a device. Override in the config. */
@@ -27,6 +41,16 @@ const IDLE = '#0B0B0B'
  */
 function reportIcons(items: { id: string; icon?: string }[]) {
   const w = window as unknown as Record<string, unknown>
+
+  // No lucide at all: every name is "missing", which is true and useless. The
+  // one fact worth saying is said once, at bundle time, by build.mjs — saying it
+  // again here per icon would bury the findings that are about this app.
+  if ((icons as Record<string, unknown>).__shotsLucideMissing) {
+    w.__SHOTS_ICON_NAMES__ = []
+    w.__SHOTS_ICONS_MISSING__ = []
+    return
+  }
+
   w.__SHOTS_ICON_NAMES__ = Object.keys(icons)
   w.__SHOTS_ICONS_MISSING__ = items
     .filter((i) => i.icon && !(i.icon in icons))

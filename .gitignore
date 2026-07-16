@@ -1,7 +1,8 @@
-node_modules/
+node_modules
 .shots/
 test/fixture-app/out/
 test/fixture-app/.shots/
+test/.stubs-work-*/
 .test.config.mjs
 appstore-generic/
 appstore-v2/

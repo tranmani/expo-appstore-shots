@@ -9,7 +9,7 @@
 import { build } from 'esbuild'
 import { createRequire } from 'node:module'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -90,10 +90,56 @@ export function nodeModulesOf(pkgJsonPath, name) {
   return resolve(pkgJsonPath, up)
 }
 
-/** Resolve a package from the *app's* node_modules, not this tool's. */
+/**
+ * Resolve a package from the *app's* node_modules, not this tool's.
+ *
+ * Returns the path to the package's own package.json — which is both the thing
+ * `version()` reads and, via `dirname`, the directory esbuild is aliased to.
+ *
+ * THE OBVIOUS IMPLEMENTATION IS WRONG, and it fails silently. Asking for
+ * `${pkg}/package.json` looks like the direct question, but a package with an
+ * `exports` map only answers for the subpaths it lists, and almost none of them
+ * list `./package.json`. lucide-react-native stopped listing it in 0.544, so
+ * `require.resolve('lucide-react-native/package.json')` throws
+ * ERR_PACKAGE_PATH_NOT_EXPORTED for a package that is sitting right there,
+ * installed — and this function used to answer "not installed", and every icon
+ * in the app rendered as nothing. No error, no warning: just an app whose icons
+ * had all quietly disappeared.
+ *
+ * So when the front door is bolted, come in through the entry point: resolve the
+ * package's main module (which every `exports` map answers for) and walk up to
+ * the directory whose package.json actually claims the name.
+ */
 function fromApp(pkg, projectRoot) {
+  const req = createRequire(resolve(projectRoot, 'package.json'))
+
   try {
-    return createRequire(resolve(projectRoot, 'package.json')).resolve(`${pkg}/package.json`)
+    return req.resolve(`${pkg}/package.json`)
+  } catch {
+    // Bolted, or genuinely absent. The next block tells the two apart.
+  }
+
+  try {
+    // `<root>/dist/cjs/lucide-react-native.js` → walk up looking for the root.
+    let dir = dirname(req.resolve(pkg))
+    for (let i = 0; i < 12; i++) {
+      const candidate = resolve(dir, 'package.json')
+      if (existsSync(candidate) && named(candidate) === pkg) return candidate
+      const up = dirname(dir)
+      if (up === dir) break
+      dir = up
+    }
+  } catch {
+    // Not installed at all.
+  }
+
+  return null
+}
+
+/** The `name` a package.json claims, or null if it is unreadable or nameless. */
+function named(pkgJson) {
+  try {
+    return JSON.parse(readFileSync(pkgJson, 'utf8')).name ?? null
   } catch {
     return null
   }
@@ -137,6 +183,53 @@ function nativeAliases() {
     'react-native-safe-area-context': stub('safe-area.ts'),
     '@react-native-async-storage/async-storage': stub('async-storage.ts'),
     '@shopify/flash-list': stub('flash-list.ts'),
+
+    // Draws on a GPU canvas, or through a native view. Neither exists here, and
+    // each one reaches for a `react-native/Libraries/…` internal on the way in —
+    // which is a resolve error against the *stub's own filename*, and takes the
+    // whole bundle with it. See rnSubpath().
+    '@shopify/react-native-skia': stub('skia.tsx'),
+    'react-native-fast-confetti': stub('fast-confetti.tsx'),
+    'react-native-android-widget': stub('android-widget.tsx'),
+    'react-native-maps': stub('maps.tsx'),
+
+    // Local data, which the mock backend cannot reach: read expo-sqlite.ts
+    // before you believe an empty list in a frame.
+    'expo-sqlite': stub('expo-sqlite.ts'),
+
+    // The apps that are not expo-router apps. Their screens are ordinary
+    // components that happen to call hooks which throw outside a navigator.
+    '@react-navigation/native': stub('react-navigation.tsx'),
+    '@react-navigation/elements': stub('react-navigation-elements.tsx'),
+    '@react-navigation/native-stack': stub('react-navigation-navigators.tsx'),
+    '@react-navigation/stack': stub('react-navigation-navigators.tsx'),
+    '@react-navigation/bottom-tabs': stub('react-navigation-navigators.tsx'),
+    '@react-navigation/drawer': stub('react-navigation-navigators.tsx'),
+    '@react-navigation/material-top-tabs': stub('react-navigation-navigators.tsx'),
+  }
+}
+
+/**
+ * `react-native/Libraries/…`, short-circuited.
+ *
+ * `react-native` is aliased to a *file*, and esbuild rewrites an alias by
+ * prefix — so `react-native/Libraries/Image/AssetRegistry` becomes
+ * `…/stubs/react-native.tsx/Libraries/Image/AssetRegistry`, a path under a
+ * filename, which cannot resolve and never could. The error names the tool's own
+ * stub, so it reads like a broken install rather than what it is: a native
+ * package asking for an RN internal.
+ *
+ * A plugin's onResolve runs ahead of the alias, so catching the subpath here is
+ * what keeps one such import from ending the run. This is the general case of
+ * section B in the FamMedley report — Skia, maps, and every new-architecture
+ * package that ships a codegen'd native view fail this exact way.
+ */
+function rnSubpath() {
+  return {
+    name: 'shots-rn-subpath',
+    setup(b) {
+      b.onResolve({ filter: /^react-native\// }, () => ({ path: stub('rn-internal.ts') }))
+    },
   }
 }
 
@@ -167,8 +260,16 @@ function entrySource(config, projectRoot) {
     )
     .join('\n')
 
+  // `setup` is imported FIRST, and that is not cosmetic: ES modules evaluate in
+  // import order, so anything it does at module scope — patching a service,
+  // seeding a store — happens before a screen module's own top-level code runs.
+  const setup = config.setup
+    ? `import * as __setup from ${rel(config.setup)}`
+    : 'const __setup = {}'
+
   return `import { createRoot } from 'react-dom/client'
 import { View } from 'react-native'
+${setup}
 import RootLayout from ${rel(config.rootLayout)}
 import { setTarget } from ${JSON.stringify(stub('expo-router.tsx'))}
 import { setInsets, setListScroll, TAB_BAR_HEIGHT } from ${JSON.stringify(stub('runtime.ts'))}
@@ -213,7 +314,24 @@ function App() {
   )
 }
 
-createRoot(document.getElementById('root')).render(<App />)
+const mount = () => createRoot(document.getElementById('root')).render(<App />)
+
+// \`config.setup\` runs before the first render, and is awaited: seeding a store
+// is usually async, and a screen that mounts before its data lands photographs
+// the skeleton it would have shown for one frame on a device.
+//
+// A setup that throws must not degrade into a blank frame — that is the one
+// thing this tool must never hand back — so the failure is rethrown where the
+// page can see it, which is what the run reports as a screen that did not
+// render.
+Promise.resolve()
+  .then(() => (typeof __setup.default === 'function' ? __setup.default(window.__SHOTS__) : undefined))
+  .then(mount)
+  .catch((e) => {
+    setTimeout(() => {
+      throw e
+    })
+  })
 `
 }
 
@@ -225,7 +343,13 @@ export async function bundle(config) {
   const entryFile = resolve(work, 'entry.tsx')
   await writeFile(entryFile, entrySource(config, projectRoot))
 
-  const alias = { ...nativeAliases(), ...resolveExtraStubs(config, projectRoot) }
+  const warnings = []
+
+  // The user's stubs are NOT merged here — they are applied last, at the bottom
+  // of this function, after every internal alias has had its say. See the note
+  // there: merging them at the top is how a config silently loses an argument
+  // with the tool.
+  const alias = { ...nativeAliases() }
 
   const own = createRequire(import.meta.url)
 
@@ -270,12 +394,39 @@ export async function bundle(config) {
   const lucide = fromApp('lucide-react-native', projectRoot)
   alias['lucide-react-native'] = lucide ? dirname(lucide) : stub('lucide-empty.ts')
 
+  // FALLING BACK TO THE EMPTY STUB IS A LOUD EVENT, NOT A QUIET ONE.
+  //
+  // When the app has no lucide at all, this is exactly right and always was: the
+  // tab bar draws labels, and nothing is lost. But when the app *does* depend on
+  // lucide and it still could not be resolved, the same silent fallback deletes
+  // every icon in the app — not just the tab bar's — and the run says nothing at
+  // all. Twenty-four frames of an app with no icons, and the only way to notice
+  // is to look. That is the worst failure this tool can have: it is invisible.
+  if (!lucide && declares(projectRoot, 'lucide-react-native')) {
+    warnings.push(
+      `this app depends on lucide-react-native, but it could not be resolved from ` +
+        `${projectRoot} — so EVERY lucide icon in these frames will render as nothing.\n` +
+        `      Install it (npm install) and run again. If it is installed, this is a bug worth reporting.`,
+    )
+  }
+
   const svg = fromApp('react-native-svg', projectRoot)
   if (svg) alias['react-native-svg'] = dirname(svg)
 
+  // Applied LAST, on purpose.
+  //
+  // These used to be merged at the top of the function, which read as harmless
+  // and was not: every alias set since — react, react-dom, lucide,
+  // react-native-svg — overwrote them. A config that stubbed lucide got the
+  // tool's answer instead of its own, silently, and there was nothing to see.
+  // The user's config is the last word about the user's app.
+  for (const [from, to] of Object.entries(resolveExtraStubs(config, projectRoot))) {
+    alias[from] = to
+  }
+
   const tsconfig = resolve(projectRoot, config.tsconfig ?? 'tsconfig.json')
 
-  await build({
+  const result = await build({
     entryPoints: [entryFile],
     bundle: true,
     outfile: resolve(work, 'app.js'),
@@ -285,18 +436,30 @@ export async function bundle(config) {
     jsx: 'automatic',
     alias,
     nodePaths,
-    plugins: [redirectPlugin(config)],
+    plugins: [rnSubpath(), redirectPlugin(config)],
     // `.web.js` first: this is how react-native-svg and friends ship their
     // browser implementations.
     resolveExtensions: ['.web.tsx', '.web.ts', '.web.jsx', '.web.js', '.tsx', '.ts', '.jsx', '.js', '.json'],
+    // An asset an app `require()`s has to have a loader or the bundle fails, and
+    // the list of image formats an app might ship is not a thing this tool gets
+    // to have an opinion about — `.webp` is just what Expo's own image tooling
+    // emits now. `config.loaders` is the escape hatch for the rest (`.mp4`,
+    // `.lottie`, `.riv`), because there will always be a next format.
     loader: {
       '.js': 'jsx',
       '.png': 'dataurl',
       '.jpg': 'dataurl',
+      '.jpeg': 'dataurl',
       '.gif': 'dataurl',
+      '.webp': 'dataurl',
+      '.avif': 'dataurl',
+      '.bmp': 'dataurl',
       '.svg': 'dataurl',
       '.ttf': 'dataurl',
       '.otf': 'dataurl',
+      '.woff': 'dataurl',
+      '.woff2': 'dataurl',
+      ...(config.loaders ?? {}),
     },
     ...(existsSync(tsconfig) ? { tsconfig } : {}),
     define: {
@@ -310,8 +473,36 @@ export async function bundle(config) {
     logLevel: 'warning',
   })
 
+  /**
+   * esbuild's warnings are findings, not chatter — and the one that matters is
+   * `import-is-undefined`.
+   *
+   * A stub that re-exports with `export *` cannot be checked statically, so a
+   * name it does not have is not an error: esbuild shrugs, hands the app
+   * `undefined`, and prints a warning nobody reads because the run says it
+   * succeeded. Then `Notifications.setBadgeCountAsync(0).catch(…)` throws at the
+   * *call* — before there is a `.catch` to catch it — and one screen photographs
+   * as nothing for a reason that was on screen at bundle time.
+   *
+   * So they are collected and reported with everything else the run found.
+   */
+  for (const w of result.warnings) {
+    const where = w.location ? ` (${w.location.file}:${w.location.line})` : ''
+    warnings.push(`${w.text}${where}`)
+  }
+
   await writeFile(resolve(work, 'index.html'), await html(config))
-  return { entryFile }
+  return { entryFile, warnings }
+}
+
+/** Does the app's package.json name this dependency? Answers "installed?" vs "declared?". */
+function declares(projectRoot, pkg) {
+  try {
+    const p = JSON.parse(readFileSync(resolve(projectRoot, 'package.json'), 'utf8'))
+    return Boolean(p.dependencies?.[pkg] ?? p.devDependencies?.[pkg] ?? p.peerDependencies?.[pkg])
+  } catch {
+    return false
+  }
 }
 
 /** User-declared replacements, e.g. a module that talks to the secure enclave. */
@@ -327,16 +518,57 @@ function resolveExtraStubs(config, projectRoot) {
  * Some modules are imported by *relative* path from several places (a keychain
  * wrapper, an analytics client), which an alias cannot catch. `config.redirect`
  * matches the tail of the import path instead.
+ *
+ * IT MATCHES WHAT THE IMPORT SAYS, NOT WHAT THE IMPORT REACHES.
+ *
+ * This is the whole of the trap, and the pattern always looks right. A rule
+ * keyed on `InteractiveLineChart$` catches `import … from './InteractiveLineChart'`
+ * and nothing else — so when the app reaches that component through a barrel
+ * (`./components/performance`, which re-exports it with `export *`), the import
+ * specifier esbuild sees is the *barrel's* path. The rule never fires, the
+ * component is bundled anyway, and everything it drags in comes with it. The
+ * redirect looks configured and is inert.
+ *
+ * `config.redirectFile` is the answer when that happens: it matches the resolved
+ * path on disk, which a barrel cannot disguise. It costs a second resolve pass
+ * for every import in the bundle, so it is only wired up when it is asked for.
  */
 function redirectPlugin(config) {
+  const at = (target) => (isAbsolute(target) ? target : resolve(config.projectRoot, target))
   const rules = Object.entries(config.redirect ?? {})
+  const fileRules = Object.entries(config.redirectFile ?? {}).map(([p, t]) => [new RegExp(p), at(t)])
+
   return {
     name: 'shots-redirect',
     setup(b) {
       for (const [pattern, target] of rules) {
-        const file = isAbsolute(target) ? target : resolve(config.projectRoot, target)
+        const file = at(target)
         b.onResolve({ filter: new RegExp(pattern) }, () => ({ path: file }))
       }
+
+      if (!fileRules.length) return
+
+      // Resolve the import the way esbuild would, look at where it actually
+      // landed, and only then decide. `RESOLVING` breaks the recursion: the
+      // nested resolve re-enters this same callback, and without the guard it
+      // would call itself forever.
+      const RESOLVING = Symbol('shots-resolving')
+      b.onResolve({ filter: /.*/ }, async (args) => {
+        if (args.pluginData === RESOLVING) return null
+        const found = await b.resolve(args.path, {
+          importer: args.importer,
+          resolveDir: args.resolveDir,
+          kind: args.kind,
+          pluginData: RESOLVING,
+        })
+        if (found.errors.length) return null
+        for (const [pattern, file] of fileRules) {
+          if (pattern.test(found.path)) return { path: file }
+        }
+        // null: let esbuild resolve it again, normally. Returning `found` here
+        // would silently swallow the other plugins' say in it.
+        return null
+      })
     },
   }
 }

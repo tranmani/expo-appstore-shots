@@ -11,7 +11,7 @@
  * your write gates all still run — against a real fix that happens to be seeded.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ScrollView, View } from 'react-native'
+import { FlatList, ScrollView, TextInput, View } from 'react-native'
 import { getInsets, getListScroll, runtime } from './runtime'
 
 /* -------------------------------------------------------- expo-location --- */
@@ -119,6 +119,26 @@ export const scheduleNotificationAsync = async () => 'id'
 export const getLastNotificationResponseAsync = async () => null
 export const AndroidImportance = { DEFAULT: 3, HIGH: 4, MAX: 5 }
 
+/**
+ * The badge, which an app clears on launch.
+ *
+ * Missing, this is worse than a missing export: `setBadgeCountAsync(0).catch(…)`
+ * reads like it is guarded, and it is not — the call happens *before* `.catch`
+ * exists to catch anything, so `undefined is not a function` throws straight
+ * through the guard and takes the screen with it. The defensive-looking line is
+ * the one that kills the frame.
+ */
+export const setBadgeCountAsync = async () => true
+export const getBadgeCountAsync = async () => 0
+export const dismissAllNotificationsAsync = async () => undefined
+export const dismissNotificationAsync = async () => undefined
+export const cancelScheduledNotificationAsync = async () => undefined
+export const cancelAllScheduledNotificationsAsync = async () => undefined
+export const getAllScheduledNotificationsAsync = async () => []
+export const getPresentedNotificationsAsync = async () => []
+export const removeNotificationSubscription = () => undefined
+export const useLastNotificationResponse = () => null
+
 /* ------------------------------------------------------ expo-task-manager --- */
 
 export const defineTask = () => undefined
@@ -188,10 +208,33 @@ export const initialWindowMetrics = { frame: { x: 0, y: 0, width: 0, height: 0 }
 export const GestureHandlerRootView = View
 export const GestureDetector = ({ children }: { children?: ReactNode }) => <>{children}</>
 export const Swipeable = View
+export const ReanimatedSwipeable = View
 export const RectButton = View
 export const BorderlessButton = View
+export const BaseButton = View
 export const TouchableOpacity = View
+export const TouchableHighlight = View
+export const TouchableWithoutFeedback = View
+export const TouchableNativeFeedback = View
+export const PanGestureHandler = View
+export const TapGestureHandler = View
+export const LongPressGestureHandler = View
+export const FlingGestureHandler = View
+export const PinchGestureHandler = View
+export const RotationGestureHandler = View
+export const NativeViewGestureHandler = View
+export const State = { UNDETERMINED: 0, FAILED: 1, BEGAN: 2, CANCELLED: 3, ACTIVE: 4, END: 5 }
+
+/**
+ * gesture-handler re-exports the RN scrollables under its own names, and an app
+ * that does `import { ScrollView } from 'react-native-gesture-handler'` means
+ * the ordinary one. The trailing underscore is only here because this module
+ * already imported those names from `react-native` and cannot redeclare them;
+ * `gesture-handler.ts` hands them back out under the names apps actually write.
+ */
 export const ScrollView_ = ScrollView
+export const FlatList_ = FlatList
+export const TextInput_ = TextInput
 
 const chainable = (): Record<string, () => unknown> =>
   new Proxy({}, { get: () => () => chainable() }) as Record<string, () => unknown>
@@ -226,8 +269,25 @@ export const useAnimatedStyle = (fn: () => Record<string, unknown>) => {
     return {}
   }
 }
+/**
+ * The props half of `useAnimatedStyle`, and it fails the same way: the worklet
+ * reads shared values that are already at their end state, so calling it once
+ * gives the props the frame should show. A throwing worklet yields `{}` rather
+ * than taking the screen down with it.
+ */
+export const useAnimatedProps = (fn: () => Record<string, unknown>) => {
+  try {
+    return fn()
+  } catch {
+    return {}
+  }
+}
 export const useAnimatedRef = () => useRef(null)
 export const useAnimatedScrollHandler = () => () => undefined
+export const useAnimatedReaction = () => undefined
+export const useFrameCallback = () => ({ setActive: () => undefined, isActive: false })
+export const useScrollViewOffset = () => ({ value: 0 })
+export const useScrollOffset = () => ({ value: 0 })
 export const withTiming = <T,>(v: T) => v
 export const withSpring = <T,>(v: T) => v
 export const withDecay = <T,>(v: T) => v
@@ -271,21 +331,130 @@ const descriptor = (): unknown =>
     { get: (_t, prop) => (prop === 'build' ? () => () => ({}) : () => descriptor()) },
   )
 
+/**
+ * Every preset, not the ones that happened to come up.
+ *
+ * This list used to hold the *entering* half — FadeIn*, SlideInRight/Left — on
+ * the reasonable theory that a still frame only ever shows something arriving.
+ * But an app does not import a descriptor in order to animate; it imports it
+ * because a line of its source says `exiting={FadeOutUp}`, and a name this file
+ * does not export is `No matching export`, which fails the bundle for every
+ * screen at once. A row that fades *out* still has to compile.
+ *
+ * So: the symmetric cross-product, written out. They are all inert — a
+ * screenshot is a still frame, and what matters is that the row is *there*, at
+ * its end state, not how it got there or how it would leave.
+ */
 export const FadeIn = descriptor()
-export const FadeOut = descriptor()
 export const FadeInDown = descriptor()
 export const FadeInUp = descriptor()
 export const FadeInLeft = descriptor()
 export const FadeInRight = descriptor()
+export const FadeOut = descriptor()
+export const FadeOutDown = descriptor()
+export const FadeOutUp = descriptor()
+export const FadeOutLeft = descriptor()
+export const FadeOutRight = descriptor()
+
 export const SlideInRight = descriptor()
 export const SlideInLeft = descriptor()
+export const SlideInUp = descriptor()
+export const SlideInDown = descriptor()
 export const SlideOutRight = descriptor()
 export const SlideOutLeft = descriptor()
+export const SlideOutUp = descriptor()
+export const SlideOutDown = descriptor()
+
 export const ZoomIn = descriptor()
+export const ZoomInRotate = descriptor()
+export const ZoomInLeft = descriptor()
+export const ZoomInRight = descriptor()
+export const ZoomInUp = descriptor()
+export const ZoomInDown = descriptor()
+export const ZoomInEasyUp = descriptor()
+export const ZoomInEasyDown = descriptor()
 export const ZoomOut = descriptor()
-export const LinearTransition = descriptor()
+export const ZoomOutRotate = descriptor()
+export const ZoomOutLeft = descriptor()
+export const ZoomOutRight = descriptor()
+export const ZoomOutUp = descriptor()
+export const ZoomOutDown = descriptor()
+export const ZoomOutEasyUp = descriptor()
+export const ZoomOutEasyDown = descriptor()
+
+export const BounceIn = descriptor()
+export const BounceInDown = descriptor()
+export const BounceInUp = descriptor()
+export const BounceInLeft = descriptor()
+export const BounceInRight = descriptor()
+export const BounceOut = descriptor()
+export const BounceOutDown = descriptor()
+export const BounceOutUp = descriptor()
+export const BounceOutLeft = descriptor()
+export const BounceOutRight = descriptor()
+
+export const FlipInXUp = descriptor()
+export const FlipInXDown = descriptor()
+export const FlipInYLeft = descriptor()
+export const FlipInYRight = descriptor()
+export const FlipInEasyX = descriptor()
+export const FlipInEasyY = descriptor()
+export const FlipOutXUp = descriptor()
+export const FlipOutXDown = descriptor()
+export const FlipOutYLeft = descriptor()
+export const FlipOutYRight = descriptor()
+export const FlipOutEasyX = descriptor()
+export const FlipOutEasyY = descriptor()
+
+export const RotateInDownLeft = descriptor()
+export const RotateInDownRight = descriptor()
+export const RotateInUpLeft = descriptor()
+export const RotateInUpRight = descriptor()
+export const RotateOutDownLeft = descriptor()
+export const RotateOutDownRight = descriptor()
+export const RotateOutUpLeft = descriptor()
+export const RotateOutUpRight = descriptor()
+
+export const RollInLeft = descriptor()
+export const RollInRight = descriptor()
+export const RollOutLeft = descriptor()
+export const RollOutRight = descriptor()
+
+export const LightSpeedInLeft = descriptor()
+export const LightSpeedInRight = descriptor()
+export const LightSpeedOutLeft = descriptor()
+export const LightSpeedOutRight = descriptor()
+
+export const StretchInX = descriptor()
+export const StretchInY = descriptor()
+export const StretchOutX = descriptor()
+export const StretchOutY = descriptor()
+
+export const PinwheelIn = descriptor()
+export const PinwheelOut = descriptor()
+
+/** Layout transitions: same idea, same inertness. */
 export const Layout = descriptor()
+export const LinearTransition = descriptor()
 export const CurvedTransition = descriptor()
+export const FadingTransition = descriptor()
+export const SequencedTransition = descriptor()
+export const JumpingTransition = descriptor()
+export const EntryExitTransition = descriptor()
+export const LayoutGrid = descriptor()
+
+/**
+ * `new Keyframe({...}).duration(300)` — a class in the real library, so `new`
+ * has to work. The constructor returns the same chainable descriptor, which is
+ * legal: a constructor that returns an object hands back that object.
+ */
+export class Keyframe {
+  constructor(_definition?: unknown) {
+    void _definition
+    return descriptor() as Keyframe
+  }
+}
+export const LayoutAnimationConfig = ({ children }: { children?: ReactNode }) => <>{children}</>
 
 /** Strip the animation-only props; render the plain view underneath. */
 function animated<P extends Record<string, unknown>>(Base: React.ComponentType<P>) {

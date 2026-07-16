@@ -31,7 +31,7 @@ import { resolveDevices } from './devices.mjs'
 import { renderGraphics } from './graphics.mjs'
 import { suggest } from './icons.mjs'
 import { scan } from './scan.mjs'
-import { serve } from './server.mjs'
+import { freePort, serve } from './server.mjs'
 import { iconReport, report, unusedFixtures } from './verify.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -210,8 +210,21 @@ async function shoot() {
 
   const fixtures = await import(pathToFileURL(config.api.fixtures).href)
 
+  // Settled BEFORE the bundle, because the bundle is where the app is told where
+  // its backend lives. Picking a port at listen time would be too late.
+  const wanted = config.apiPort
+  try {
+    config.apiPort = await freePort(wanted, { explicit: config.apiPortExplicit })
+  } catch (e) {
+    fail(e.message)
+  }
+  if (config.apiPort !== wanted) {
+    console.warn(`  ! :${wanted} is busy — using :${config.apiPort} for the mock backend instead`)
+  }
+
   step('bundling the app for the browser')
-  await bundle(config)
+  const built = await bundle(config)
+  for (const w of built.warnings ?? []) console.warn(`  ! ${w}`)
 
   step(`serving the mock backend on :${config.apiPort}`)
   const server = await serve({

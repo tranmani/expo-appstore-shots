@@ -5,7 +5,12 @@ export default {
   outDir: 'out',
   workDir: '.shots',
 
-  screens: [{ id: 'home', module: 'src/app/index.tsx', route: 'index', tab: 'home' }],
+  screens: [
+    { id: 'home', module: 'src/app/index.tsx', route: 'index', tab: 'home' },
+    // Not a slide — it is never framed. It is here so that the run compiles and
+    // renders every import a modern native-heavy app makes. See the file.
+    { id: 'kitchen-sink', module: 'src/app/kitchen-sink.tsx', route: 'kitchen-sink', title: 'Kitchen sink' },
+  ],
 
   tabBar: {
     tint: '#17513F',
@@ -22,6 +27,10 @@ export default {
     clock: '2026-03-17T09:41:00+01:00',
     storage: { 'fixture.seen': 'returning user' },
   },
+
+  // State that does not arrive over `fetch`. Here it only records that it ran
+  // before the first render — kitchen-sink.tsx throws if it did not.
+  setup: 'src/app/setup.ts',
 
   api: { fixtures: 'shots/fixtures.mjs' },
   devices: ['iphone-6.9'],

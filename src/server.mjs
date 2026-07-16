@@ -142,13 +142,61 @@ export function serve({ port, dist, fixtures }) {
     })
   }
 
-  return new Promise((ready) => {
+  return new Promise((ready, broken) => {
+    // Without this, a port that is already taken is an *unhandled* 'error' event
+    // — which is not a message, it is a stack trace with EADDRINUSE in it, and
+    // the run dies without ever saying that the fix is to kill the last one.
+    server.once('error', (e) => broken(portError(e, port)))
     server.listen(port, () => {
       server.unseeded = unseeded
       server.hits = hits
       server.routes = routes
       ready(server)
     })
+  })
+}
+
+function portError(e, port) {
+  if (e.code !== 'EADDRINUSE') return e
+  return new Error(
+    `port ${port} is already in use — most likely by a run of this tool that was interrupted ` +
+      `before it could let go of it.\n\n` +
+      `  Find it:  lsof -ti :${port}\n` +
+      `  Free it:  kill $(lsof -ti :${port})\n\n` +
+      `Or set a different \`apiPort\` in shots.config.mjs.`,
+  )
+}
+
+/**
+ * A port that is actually free.
+ *
+ * The port cannot simply be picked at listen time: it is baked into the page at
+ * *bundle* time (the app is told where its backend is), so it has to be settled
+ * before anything is built.
+ *
+ * A default that is busy moves out of the way — a stale run holding :8788 is an
+ * accident, and failing the next run over it is nothing but friction. A port
+ * someone actually typed does not move: they typed it for a reason this code
+ * cannot see, and quietly using a different one would be its own bug.
+ */
+export async function freePort(preferred, { explicit = false, scan = 20 } = {}) {
+  if (await available(preferred)) return preferred
+
+  if (explicit) throw portError({ code: 'EADDRINUSE' }, preferred)
+
+  for (let port = preferred + 1; port <= preferred + scan; port++) {
+    if (await available(port)) return port
+  }
+
+  throw portError({ code: 'EADDRINUSE' }, preferred)
+}
+
+/** Bind it and let go. Racy in theory; the alternative is guessing. */
+function available(port) {
+  return new Promise((done) => {
+    const probe = createServer()
+    probe.once('error', () => done(false))
+    probe.listen(port, () => probe.close(() => done(true)))
   })
 }
 

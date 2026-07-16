@@ -8,7 +8,15 @@ export default {
   /** Where the Expo app lives (its package.json and tsconfig.json). */
   projectRoot: '.',
 
-  /** Your root layout — the providers, theme and header the screens live inside. */
+  /**
+   * Your root layout — the providers, theme and header the screens live inside.
+   *
+   * expo-router: `src/app/_layout.tsx` (or `app/_layout.tsx`).
+   * React Navigation: `App.tsx` — the tool's navigator stubs stop the tree at
+   *   your navigator and render the screen being shot, so everything above it
+   *   mounts for real.
+   * Omit it entirely for a bare screen and a header, and nothing above them.
+   */
   rootLayout: 'src/app/_layout.tsx',
 
   /** Where finished frames go. */
@@ -55,13 +63,36 @@ export default {
     secureStore: {},
   },
 
-  /** The mock backend. */
+  /** The mock backend. It answers `fetch`, and only `fetch`. */
   api: { fixtures: 'shots/fixtures.mjs' },
+
+  /**
+   * Everything the mock backend cannot reach: a store the screens read directly,
+   * a SQLite-backed repository, an entitlement, a bootstrap that only runs at
+   * the app root (which this harness never mounts). Runs in the page before the
+   * first render, and is awaited.
+   *
+   *   export default async function setup() {
+   *     useSession.setState({ entitlements: { pro: true } })
+   *     useTasks.setState({ tasks: [...], isInitializing: false })
+   *   }
+   */
+  // setup: 'shots/setup.ts',
 
   /** Extra module replacements, e.g. anything touching the keychain directly. */
   // stubs: { '@/lib/device-key': 'shots/stubs/device-key.ts' },
-  /** Same, but matched against the *end* of an import path (for relative imports). */
+  /**
+   * Same, but matched against the *end* of an import path (for relative
+   * imports). Note it matches what the import SAYS: a component reached through
+   * a barrel (`export * from './Chart'`) is imported by the barrel's path, so a
+   * rule keyed on the component never fires. `redirectFile` matches the resolved
+   * path on disk instead, which a barrel cannot disguise.
+   */
   // redirect: { '(^|/)device-key$': 'shots/stubs/device-key.ts' },
+  // redirectFile: { 'components/Chart\\.tsx$': 'shots/stubs/chart.tsx' },
+
+  /** An asset format esbuild has no loader for. Images and fonts are covered. */
+  // loaders: { '.lottie': 'dataurl' },
 
   /** `process.env.*` values compiled into the bundle. */
   env: {

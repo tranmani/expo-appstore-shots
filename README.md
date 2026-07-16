@@ -91,6 +91,9 @@ cannot render in production either.
 | The tab bar | With expo-router's native tabs, **iOS** draws it, not your app. It is redrawn from your config. Set `tabBar.enabled: false` if your app draws its own. |
 | The status bar | react-native-web has none, so it is drawn into the safe-area strip your app leaves empty (9:41, full battery — Apple's own convention). |
 | The typeface | The device runs SF Pro, which Apple does not license for redistribution. Inter stands in unless you point `frame.fontFile` at your app's own font. |
+| A Skia canvas | There is no GPU canvas here, so `@shopify/react-native-skia` draws nothing. If a chart or a shader **is** the screen, point `config.stubs` at a component that draws it in ordinary views — otherwise that frame is honestly empty. |
+| A map | `react-native-maps` is a native view. `MapView` renders an empty box of the right size (so the rest of the screen keeps its real layout) rather than vanishing. |
+| Local data | `expo-sqlite` answers "no rows". An offline-first screen photographs as a fresh install unless you seed it — see [Seeding what `fetch` cannot reach](#seeding-what-fetch-cannot-reach). |
 
 Screenshots must represent your app truthfully — that is an App Review rule, not
 a style note. Seed fixtures with data your app could actually return, and caption
@@ -103,7 +106,10 @@ each slide with what that slide actually shows.
 ```js
 export default {
   projectRoot: '.',
-  rootLayout: 'src/app/_layout.tsx',   // your providers + header live here
+  rootLayout: 'src/app/_layout.tsx',   // your providers + header live here.
+                                       // Optional: omit it and a minimal one is
+                                       // used (see "React Navigation" below).
+  setup: 'shots/setup.ts',             // optional: seed what fetch cannot reach
   outDir: 'appstore',
 
   screens: [
@@ -156,8 +162,92 @@ export default {
       headline: 'The one true thing about this screen.',
       sub: 'A supporting line that describes what is actually on it.' },
   ],
+
+  // Escape hatches. Most apps need none of these.
+  stubs: { 'src/lib/keychain': 'shots/fake-keychain.ts' },  // replace a module
+  redirect: { '(^|/)device-key$': 'shots/device-key.ts' },  // ↑ by import path
+  redirectFile: { 'components/Chart\\.tsx$': 'shots/chart.tsx' },  // ↑ by real path
+  loaders: { '.lottie': 'dataurl' },   // an asset format esbuild has no loader for
+  apiPort: 8788,                       // a busy default moves; a set one does not
 }
 ```
+
+`stubs` and `redirect` are the same idea at two levels: `stubs` swaps a whole
+package (it is an alias, so it catches every importer), `redirect` swaps a module
+reached by a *relative* path. Whatever you put in `stubs` wins over the tool's own
+aliases — you can replace its lucide, its Skia, its react-native-maps.
+
+**`redirect` matches what the import says, not what it reaches.** This is worth
+knowing before you spend an afternoon on it: a rule keyed on `Chart$` catches
+`from './Chart'` and nothing else, so if the screen reaches that component
+through a barrel (`from './components'`, which re-exports it with `export *`),
+the specifier esbuild sees is the *barrel's* and the rule never fires. The
+redirect looks configured and is inert. `redirectFile` matches the resolved path
+on disk instead, which a barrel cannot disguise.
+
+## React Navigation
+
+The tool grew up around expo-router, but a React Navigation app needs no
+special-casing beyond knowing which file to point at:
+
+```js
+export default {
+  // Your App.tsx: every provider above the navigator mounts and runs for real,
+  // and at the navigator itself the tool renders the one screen being shot.
+  rootLayout: 'App.tsx',
+  screens: [
+    { id: 'home', module: 'src/screens/HomeScreen.tsx', route: 'Home', title: 'Home' },
+  ],
+  tabBar: { style: 'bar', items: [/* … */] },   // 'bar' = React Navigation's JS tabs
+}
+```
+
+`createNativeStackNavigator()` and friends hand back the tool's own `Stack`, so
+`<Stack.Screen name="Home" options={{ title: 'Home' }} />` puts a real title in
+the header of the screen configured as `route: 'Home'`. `useNavigation`,
+`useRoute`, `useFocusEffect`, `useIsFocused`, `useNavigationState` and
+`useScrollToTop` are answered from the screen being photographed instead of
+throwing "Couldn't find a navigation object".
+
+Omit `rootLayout` entirely and you get a minimal one — your screen, a header, and
+nothing above it. That is right for a screen with no root providers, and the run
+says so on every use.
+
+## Seeding what `fetch` cannot reach
+
+The mock backend answers HTTP. Plenty of apps get their data another way, and
+those screens photograph empty — convincingly, with no error, because an empty
+list is what a fresh install looks like. It is the one failure this tool cannot
+see for you.
+
+`config.setup` is a module of yours that runs in the page, in your app's own
+module world, **before the first render** (and is awaited, so async seeding
+lands before anything mounts):
+
+```js
+// shots/setup.ts
+import { useSession } from '../src/stores/session'
+import { useTasks } from '../src/stores/tasks'
+
+export default async function setup() {
+  // An entitlement, so feature-gated screens render their unlocked path.
+  useSession.setState({ user: { name: 'Sam' }, entitlements: { pro: true } })
+
+  // A store the screens read directly — SQLite-backed, hydrated on boot, etc.
+  // This is also how you switch off an `isInitializing` flag that would
+  // otherwise photograph as a skeleton forever.
+  useTasks.setState({ tasks: [{ id: '1', title: 'Rendered from the app' }], isInitializing: false })
+}
+```
+
+Three things it solves, all of which look identical from the outside (an empty
+screen):
+
+| | |
+|---|---|
+| **A root bootstrap that never runs** | The harness mounts one screen, not your app root. If your data is fetched and hydrated by a root lifecycle hook, either point `rootLayout` at the file that runs it, or call it here. |
+| **A local database** | `expo-sqlite` is stubbed and every query answers "no rows". Seed the store the screens read, or point `config.stubs` at your own repository/`db.ts` and return fixtures from one layer up — your screens then read their real code paths. |
+| **Feature gating** | Content behind a subscription check renders empty even when its data is present. Grant the entitlement here. |
 
 ### Fixtures
 
@@ -201,6 +291,20 @@ redirect: { '(^|/)device-key$': 'shots/stubs/device-key.ts' },
 **Something below the fold is missing** — the screen is taller than the viewport.
 That is also true on device; scroll position is what a screenshot captures.
 
+**Every icon in the app is gone** — lucide could not be resolved. The run says so
+now, loudly, and the fix is almost always `npm install`. (It used to say nothing:
+the tool concluded "no lucide", swapped in an empty stub, and every glyph in the
+app quietly became nothing.)
+
+**`No matching export … for import "X"`** — a stub is missing a name your app
+imports. Every screen bundles into one file, so this fails the whole run even if
+only one dev-only screen imports it. Add it yourself with `stubs`, and please
+open an issue: the stub should have had it.
+
+**`port 8788 is already in use`** — an interrupted run is still holding it.
+`kill $(lsof -ti :8788)`. If you never set `apiPort` yourself, the run moves to
+the next free port instead and only mentions it.
+
 **A screen shows an empty state you did not expect** — read the end of the run.
 Every API call that no fixture matched is listed there; the empty state is almost
 always one of them.
@@ -221,11 +325,31 @@ Node 20+, and Chromium (`npx playwright install chromium`, ~130MB, once). Your
 Expo app needs its own `node_modules` installed — the tool bundles the app *from*
 them.
 
-Works with: expo-router (Stack and native tabs), Reanimated, Gesture Handler,
-FlashList, react-native-svg, lucide-react-native, expo-location / secure-store /
-haptics / notifications / constants / clipboard / crypto / device / localization
-/ task-manager / status-bar, react-native-iap, AsyncStorage. Anything else, stub
-it yourself in three lines.
+**On pnpm**, `pnpm add -D expo-appstore-shots` prints `Ignored build scripts:
+esbuild` and moves on. esbuild's binary is then not set up and the first run
+fails somewhere unhelpful. Once:
+
+```sh
+pnpm rebuild esbuild
+```
+
+or, better, in the app's `package.json`:
+
+```json
+{ "pnpm": { "onlyBuiltDependencies": ["esbuild"] } }
+```
+
+**Works with:** expo-router (Stack and native tabs) and **React Navigation**
+(native-stack, stack, bottom-tabs, drawer, elements); Reanimated 3/4, Gesture
+Handler, FlashList, react-native-svg, lucide-react-native (any version),
+**@shopify/react-native-skia**, **react-native-maps**, **react-native-sqlite**,
+**react-native-fast-confetti**, **react-native-android-widget**; expo-location /
+secure-store / haptics / notifications / constants / clipboard / crypto / device
+/ localization / task-manager / status-bar / file-system (both the `File` API and
+the flat one) / web-browser / auth-session / linking; react-native-iap,
+AsyncStorage. Anything else, stub it yourself in three lines with `config.stubs`
+— and a native package that reaches for `react-native/Libraries/…` internals
+resolves to a no-op instead of ending the run.
 
 ## For AI agents
 

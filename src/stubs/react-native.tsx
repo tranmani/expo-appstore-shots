@@ -15,6 +15,28 @@ import { forwardRef, useCallback, useLayoutEffect, useRef } from 'react'
 
 export * from 'react-native-web'
 
+/**
+ * The two things `react-native` exports that react-native-web does not, and that
+ * an app can reach for without ever meaning to render them.
+ *
+ * `DevSettings` is imported by dev-only screens; `TurboModuleRegistry` is how a
+ * native package (react-native-android-widget, and most of the new-architecture
+ * ecosystem) asks for its native side. Neither exists in a browser, and neither
+ * is missed in a still frame — but a missing *export* is not a missing feature,
+ * it is `No matching export`, and that fails the whole bundle. Every screen
+ * bundles together here, so one dev-only import takes down the entire run.
+ */
+export const DevSettings = {
+  addMenuItem: () => undefined,
+  reload: () => undefined,
+}
+
+/** `getEnforcing` is named for what it does: it throws when the module is absent. It must not. */
+export const TurboModuleRegistry = {
+  get: () => null,
+  getEnforcing: () => ({}),
+}
+
 type TextProps = React.ComponentProps<typeof RNW.Text> & {
   adjustsFontSizeToFit?: boolean
   minimumFontScale?: number

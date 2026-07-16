@@ -36,6 +36,9 @@ export function setTarget(t: Target) {
   target = t
 }
 
+/** The screen being photographed. `react-navigation.tsx` answers `useRoute()` from it. */
+export const getTarget = () => target
+
 /** Options registered per route by the root layout's `<Stack.Screen name=…>`. */
 const registered: Record<string, Record<string, unknown>> = {}
 /** Options the mounted screen declares for itself. */
@@ -59,14 +62,24 @@ function useDeclared() {
   return declared
 }
 
-const navigation = {
+export const navigation = {
   goBack: () => undefined,
   canGoBack: () => true,
   navigate: () => undefined,
   push: () => undefined,
+  replace: () => undefined,
+  pop: () => undefined,
+  popToTop: () => undefined,
+  reset: () => undefined,
+  setParams: () => undefined,
   setOptions: (o: Record<string, unknown>) => publish({ ...declared, ...o }),
   addListener: () => () => undefined,
+  removeListener: () => undefined,
   isFocused: () => true,
+  dispatch: () => undefined,
+  getParent: () => navigation,
+  getState: () => ({ key: 'stack-shots', index: 0, routeNames: [], routes: [], type: 'stack', stale: false }),
+  getId: () => undefined,
 }
 
 /**

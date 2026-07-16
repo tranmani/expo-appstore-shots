@@ -30,7 +30,6 @@ test('config: with no slides, every screen is shot uncaptioned', () => {
 })
 
 test('config: rejects what cannot work', () => {
-  assert.throws(() => normalise({ ...base, rootLayout: undefined }, CONFIG_PATH), ConfigError)
   assert.throws(() => normalise({ ...base, screens: [] }, CONFIG_PATH), ConfigError)
   assert.throws(
     () => normalise({ ...base, screens: [{ id: 'a', module: 'a.tsx' }, { id: 'a', module: 'b.tsx' }] }, CONFIG_PATH),

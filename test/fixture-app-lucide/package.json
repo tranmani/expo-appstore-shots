@@ -1,0 +1,9 @@
+{
+  "name": "fixture-app-lucide",
+  "private": true,
+  "version": "0.0.0",
+  "description": "An app that DEPENDS on lucide-react-native and has no node_modules — the exact state in which the tool used to silently delete every icon in the app. One test asserts it warns instead.",
+  "dependencies": {
+    "lucide-react-native": "^0.563.0"
+  }
+}
