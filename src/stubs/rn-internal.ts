@@ -89,9 +89,28 @@ const internals: unknown = new Proxy(anything(), {
     if (prop === 'registerAsset') return registerAsset
     if (prop === 'getAssetByID') return getAssetByID
     if (prop === 'codegenNativeCommands') return codegenNativeCommands
+    // `react-native/Libraries/Utilities/Platform` is a real subpath with a real
+    // answer, and it is the one place where a proxy would be actively harmful:
+    // `Platform.OS` would match neither 'ios' nor 'android', so an app would
+    // take whatever branch it wrote for neither — silently, in a picture. A
+    // catch-all that turns a hard error into a wrong render is a bad trade, so
+    // this one is answered properly.
+    if (prop === 'OS') return 'ios'
+    if (prop === 'Version') return 26
+    if (prop === 'isPad' || prop === 'isTV' || prop === 'isTesting') return false
+    if (prop === 'constants') return { reactNativeVersion: { major: 0, minor: 81, patch: 0 } }
+    if (prop === 'select') {
+      return (spec: Record<string, unknown>) =>
+        'ios' in spec ? spec.ios : 'native' in spec ? spec.native : spec.default
+    }
     return Reflect.get(target, prop)
   },
   apply: (target, thisArg, args) => Reflect.apply(target as () => unknown, thisArg, args),
 })
 
 export default internals
+
+/** Named, for `import { OS } from 'react-native/Libraries/Utilities/Platform'`. */
+export const OS = 'ios'
+export const select = (spec: Record<string, unknown>) =>
+  'ios' in spec ? spec.ios : 'native' in spec ? spec.native : spec.default

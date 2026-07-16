@@ -25,6 +25,10 @@ import { DevSettings, Text, TurboModuleRegistry, View } from 'react-native'
 // that produced `…/stubs/react-native.tsx/Libraries/Image/AssetRegistry`.
 import { registerAsset } from 'react-native/Libraries/Image/AssetRegistry'
 import codegenNativeCommands from 'react-native/Libraries/Utilities/codegenNativeCommands'
+// The subpath the catch-all must NOT answer with a proxy: `Platform.OS` has to
+// be a string an app can branch on, or it takes the branch it wrote for neither
+// platform — silently, in a picture.
+import RNPlatform from 'react-native/Libraries/Utilities/Platform'
 
 // reanimated: the exiting half of the cross-product, and the newer APIs.
 import Animated, {
@@ -169,6 +173,8 @@ export default function KitchenSink() {
     'react-navigation-elements/useHeaderHeight': headerHeight > 0,
     'react-navigation-bottom-tabs/useBottomTabBarHeight': tabBarHeight > 0,
     'expo-auth-session/makeRedirectUri': typeof makeRedirectUri() === 'string',
+    'rn-internal/Platform.OS is a real platform': RNPlatform.OS === 'ios' || RNPlatform.OS === 'android',
+    'rn-internal/Platform.select picks a branch': RNPlatform.select({ ios: 'yes', default: 'no' }) === 'yes',
     'react-native/TurboModuleRegistry.getEnforcing survives use':
       typeof TurboModuleRegistry.getEnforcing('Anything').addListener === 'function',
     // config.setup ran, and finished, BEFORE this render. Not "eventually".
