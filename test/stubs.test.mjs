@@ -71,6 +71,23 @@ test('no import in a native-heavy app quietly resolves to undefined', async () =
   assert.deepEqual(undefined_, [], 'an import in kitchen-sink.tsx is undefined at runtime')
 })
 
+test('an import that IS undefined gets reported', async () => {
+  // The other half, and without it the test above is a tautology: it filters a
+  // list that is empty whether or not the tool collects anything, so deleting
+  // the collector outright left every test green. A feature nothing can fail is
+  // not a feature. `undefined-import.tsx` reaches for a name that does not
+  // exist; the run has to say so.
+  const { warnings } = await build({
+    screens: [{ id: 'bad', module: 'src/app/undefined-import.tsx', route: 'bad' }],
+    slides: [],
+    setup: undefined,
+  })
+  assert.ok(
+    warnings.some((w) => /definitelyNotAnExport/.test(w)),
+    `esbuild's import-is-undefined warning was not reported: ${JSON.stringify(warnings)}`,
+  )
+})
+
 test('a react-native subpath resolves to the internals stub, not to a path under a filename', async () => {
   // THE RECURRING FAILURE SHAPE. `react-native` is aliased to a file, and
   // esbuild rewrites aliases by prefix, so `react-native/Libraries/…` used to
@@ -104,6 +121,44 @@ test('a user stub wins over the tool’s own alias', async () => {
   const marker = resolve(here, 'fixture-app/src/app/fake-lucide.ts')
   const { js } = await build({ stubs: { 'lucide-react-native': marker } })
   assert.match(js, /USER_STUB_WON/, 'config.stubs lost to an internal alias')
+})
+
+test('a user stub beats even the react-native subpath catch-all', async () => {
+  // The catch-all is an onResolve plugin, and a plugin beats the alias table —
+  // which is where `config.stubs` lives. So "your stubs win" was false for this
+  // whole namespace, and there was no way at all to answer, say,
+  // `react-native/Libraries/Utilities/Platform` properly: the tool always got
+  // there first with a Proxy.
+  const marker = resolve(here, 'fixture-app/src/app/fake-asset-registry.ts')
+  const { js } = await build({
+    stubs: { 'react-native/Libraries/Image/AssetRegistry': marker },
+  })
+  assert.match(js, /USER_ASSET_REGISTRY_WON/, 'the subpath catch-all overrode config.stubs')
+})
+
+test('config.redirect can out-argue the react-native subpath catch-all', async () => {
+  // Plugins answer in the order they are registered, and the catch-all is a
+  // plugin — so if it goes first, no `redirect` rule in the world can reach this
+  // namespace. The user's config is registered first for exactly this reason.
+  const { js } = await build({
+    redirect: { 'Libraries/Image/AssetRegistry$': 'src/app/fake-asset-registry.ts' },
+  })
+  assert.match(js, /USER_ASSET_REGISTRY_WON/, 'the subpath catch-all answered before config.redirect')
+})
+
+test('redirectFile matches the resolved path, whatever the import called it', async () => {
+  // F17's capability, which shipped with no test at all. `kitchen-sink.tsx`
+  // imports './pixel.webp' by a relative specifier; this rule never mentions
+  // that string — it matches where the import lands on disk.
+  const { js } = await build({
+    redirectFile: { 'fake-lucide\\.ts$': 'src/app/fake-asset-registry.ts' },
+    stubs: { 'lucide-react-native': resolve(here, 'fixture-app/src/app/fake-lucide.ts') },
+  })
+  // The stub resolves to fake-lucide.ts; redirectFile then catches it by its
+  // real path and swaps it again. If it fired, the marker from the *second*
+  // file is what ends up in the bundle.
+  assert.match(js, /USER_ASSET_REGISTRY_WON/, 'redirectFile did not match the resolved path')
+  assert.ok(!js.includes('USER_STUB_WON'), 'redirectFile did not replace the module it matched')
 })
 
 test('lucide missing from an app that depends on it is a loud warning, not a quiet fallback', async () => {
@@ -144,6 +199,33 @@ test('lucide resolves even when its exports map bolts the front door', async () 
   // This builds a real package with a real 0.563-shaped exports map (no
   // `./package.json`, verified against the published one) and asserts the tool
   // finds it anyway, by resolving the entry and walking up to the root.
+  await withFakeLucide({ esmOnly: false }, async ({ js, warnings }) => {
+    assert.deepEqual(warnings, [], 'an installed lucide was reported as missing')
+    assert.match(js, /FAKE_LUCIDE_HOUSE/, 'the app’s real lucide was not the one bundled')
+  })
+})
+
+test('lucide resolves even when the package answers no `require` condition at all', async () => {
+  // The walk-up's original premise was that the entry is something "every
+  // exports map answers for". It is not: `createRequire().resolve()` asks under
+  // the **require** condition, so a package shipping only `import`/`browser` —
+  // which is where the react-native ecosystem is going — answers neither that
+  // nor `./package.json`, and the tool was back to concluding "no lucide" and
+  // deleting every icon. lucide 0.563 ships `require`, so the first fix worked
+  // by luck as much as by reasoning. Reading it off the disk does not care.
+  await withFakeLucide({ esmOnly: true }, async ({ js, warnings }) => {
+    assert.deepEqual(warnings, [], 'an ESM-only lucide was reported as missing')
+    assert.match(js, /FAKE_LUCIDE_HOUSE/, 'the app’s real lucide was not the one bundled')
+  })
+})
+
+/**
+ * A real installed lucide, with a real 0.563-shaped exports map — no
+ * `./package.json`, no `icons` object, icons as individual named exports.
+ * `esmOnly` drops the `require` condition and `main` too, which is what makes
+ * Node's resolver refuse the package entirely.
+ */
+async function withFakeLucide({ esmOnly }, check) {
   const app = await mkdtemp(resolve(tmpdir(), 'shots-lucide-'))
   try {
     const pkg = resolve(app, 'node_modules/lucide-react-native')
@@ -156,38 +238,38 @@ test('lucide resolves even when its exports map bolts the front door', async () 
       JSON.stringify({
         name: 'lucide-react-native',
         version: '0.563.0',
-        main: 'dist/cjs/lucide.js',
-        // Exactly the shape the published 0.563 ships: no "./package.json".
+        ...(esmOnly ? {} : { main: 'dist/cjs/lucide.js' }),
         exports: {
           '.': {
             types: './dist/lucide.d.ts',
             import: './dist/esm/lucide.js',
             browser: './dist/esm/lucide.js',
-            require: './dist/cjs/lucide.js',
+            ...(esmOnly ? {} : { require: './dist/cjs/lucide.js' }),
           },
         },
       }),
     )
-    // Individual named exports, and no `icons` object — 0.544+ again.
     await writeFile(resolve(pkg, 'dist/esm/lucide.js'), 'export const House = () => "FAKE_LUCIDE_HOUSE"\n')
     await writeFile(resolve(pkg, 'dist/cjs/lucide.js'), 'exports.House = () => "FAKE_LUCIDE_HOUSE"\n')
 
-    await writeFile(resolve(app, 'package.json'), JSON.stringify({ name: 'a', dependencies: { 'lucide-react-native': '^0.563.0' } }))
+    await writeFile(
+      resolve(app, 'package.json'),
+      JSON.stringify({ name: 'a', dependencies: { 'lucide-react-native': '^0.563.0' } }),
+    )
     await writeFile(resolve(app, 'src/app/index.tsx'), 'export default function Home() { return null }\n')
 
-    const { js, warnings } = await build({
-      projectRoot: app,
-      rootLayout: undefined,
-      screens: [{ id: 'home', module: 'src/app/index.tsx', route: 'index' }],
-      setup: undefined,
-    })
-
-    assert.deepEqual(warnings, [], 'an installed lucide was reported as missing')
-    assert.match(js, /FAKE_LUCIDE_HOUSE/, 'the app’s real lucide was not the one bundled')
+    await check(
+      await build({
+        projectRoot: app,
+        rootLayout: undefined,
+        screens: [{ id: 'home', module: 'src/app/index.tsx', route: 'index' }],
+        setup: undefined,
+      }),
+    )
   } finally {
     await rm(app, { recursive: true, force: true })
   }
-})
+}
 
 test('rootLayout is optional, and defaults to the built-in one', async () => {
   // D12: this used to be a hard ConfigError, which meant a React Navigation app

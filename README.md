@@ -177,13 +177,13 @@ package (it is an alias, so it catches every importer), `redirect` swaps a modul
 reached by a *relative* path. Whatever you put in `stubs` wins over the tool's own
 aliases — you can replace its lucide, its Skia, its react-native-maps.
 
-**`redirect` matches what the import says, not what it reaches.** This is worth
-knowing before you spend an afternoon on it: a rule keyed on `Chart$` catches
-`from './Chart'` and nothing else, so if the screen reaches that component
-through a barrel (`from './components'`, which re-exports it with `export *`),
-the specifier esbuild sees is the *barrel's* and the rule never fires. The
-redirect looks configured and is inert. `redirectFile` matches the resolved path
-on disk instead, which a barrel cannot disguise.
+**`redirect` matches what an import says, not where it lands.** One file has as
+many specifiers as it has importers — `./Chart`, `../components/Chart`,
+`@/components/Chart` — and your rule has to match the one esbuild is handed, for
+every importer. `redirectFile` matches the resolved path on disk instead, which
+is one string however many ways the app spells it. (A barrel is not a problem
+for either: `export * from './Chart'` is itself an import of `./Chart`, so a
+`Chart$` rule does fire through it.)
 
 ## React Navigation
 
@@ -342,7 +342,7 @@ or, better, in the app's `package.json`:
 **Works with:** expo-router (Stack and native tabs) and **React Navigation**
 (native-stack, stack, bottom-tabs, drawer, elements); Reanimated 3/4, Gesture
 Handler, FlashList, react-native-svg, lucide-react-native (any version),
-**@shopify/react-native-skia**, **react-native-maps**, **react-native-sqlite**,
+**@shopify/react-native-skia**, **react-native-maps**, **expo-sqlite**,
 **react-native-fast-confetti**, **react-native-android-widget**; expo-location /
 secure-store / haptics / notifications / constants / clipboard / crypto / device
 / localization / task-manager / status-bar / file-system (both the `File` API and
@@ -350,6 +350,11 @@ the flat one) / web-browser / auth-session / linking; react-native-iap,
 AsyncStorage. Anything else, stub it yourself in three lines with `config.stubs`
 — and a native package that reaches for `react-native/Libraries/…` internals
 resolves to a no-op instead of ending the run.
+
+"Works with" means *it bundles and renders*, not that it draws. A Skia canvas, a
+map and a home-screen widget have no browser equivalent and are listed under
+[What is real, and what is not](#what-is-real-and-what-is-not) — read that before
+you trust a frame that contains one.
 
 ## For AI agents
 

@@ -9,7 +9,7 @@
 import { build } from 'esbuild'
 import { createRequire } from 'node:module'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -106,9 +106,23 @@ export function nodeModulesOf(pkgJsonPath, name) {
  * in the app rendered as nothing. No error, no warning: just an app whose icons
  * had all quietly disappeared.
  *
- * So when the front door is bolted, come in through the entry point: resolve the
- * package's main module (which every `exports` map answers for) and walk up to
- * the directory whose package.json actually claims the name.
+ * So when the front door is bolted, go and look. Three tries, in order of how
+ * much they trust the package to answer honestly:
+ *
+ *  1. Ask Node for `<pkg>/package.json`. Correct when it works, and it usually
+ *     does.
+ *  2. Walk the `node_modules` chain and read it off the disk. An `exports` map
+ *     cannot hide a file from `existsSync`, and this is the one that always
+ *     works — including for the packages step 3 cannot see.
+ *  3. Resolve the entry and walk up to the root.
+ *
+ * Step 3 was once the whole fix, and its rationale was wrong: it said the entry
+ * is something "every exports map answers for", but `createRequire().resolve()`
+ * asks under the **`require`** condition, and a package that ships only
+ * `import`/`browser` (which react-native packages increasingly do) answers
+ * neither that nor `./package.json`. lucide 0.563 happens to ship `require`, so
+ * the bug it was written for was fixed by luck as much as by reasoning. Step 2
+ * does not care.
  */
 function fromApp(pkg, projectRoot) {
   const req = createRequire(resolve(projectRoot, 'package.json'))
@@ -116,7 +130,19 @@ function fromApp(pkg, projectRoot) {
   try {
     return req.resolve(`${pkg}/package.json`)
   } catch {
-    // Bolted, or genuinely absent. The next block tells the two apart.
+    // Bolted, or genuinely absent. The rest tells the two apart.
+  }
+
+  // `<app>/node_modules/<pkg>/package.json`, then up through every parent —
+  // which is Node's own lookup, minus the part that can refuse to answer.
+  // realpath because under pnpm that entry is a symlink into `.pnpm/…`, and the
+  // real directory is the one whose neighbours esbuild must resolve from.
+  for (let dir = projectRoot; ; ) {
+    const candidate = resolve(dir, 'node_modules', pkg, 'package.json')
+    if (existsSync(candidate)) return realpathSync(candidate)
+    const up = dirname(dir)
+    if (up === dir) break
+    dir = up
   }
 
   try {
@@ -175,8 +201,16 @@ function nativeAliases() {
     '@react-native-community/datetimepicker': stub('datetimepicker.tsx'),
     'react-native-screens': stub('noop.ts'),
     'expo-file-system': stub('noop.ts'),
+    'expo-file-system/legacy': stub('noop.ts'),
     'expo-web-browser': stub('noop.ts'),
     'expo-linking': stub('noop.ts'),
+    // `maybeCompleteAuthSession()` runs at module scope in every app that has
+    // ever had an OAuth button. The functions were in noop.ts already, but only
+    // expo-web-browser was pointed at it — so an app importing them from
+    // expo-auth-session got its real package, and its native side with it.
+    'expo-auth-session': stub('noop.ts'),
+    'expo-auth-session/providers/google': stub('noop.ts'),
+    'expo-apple-authentication': stub('noop.ts'),
     'react-native-iap': stub('react-native-iap.ts'),
     'react-native-reanimated': stub('reanimated.ts'),
     'react-native-gesture-handler': stub('gesture-handler.ts'),
@@ -224,11 +258,21 @@ function nativeAliases() {
  * section B in the FamMedley report — Skia, maps, and every new-architecture
  * package that ships a codegen'd native view fail this exact way.
  */
-function rnSubpath() {
+function rnSubpath(config) {
+  // A plugin's onResolve beats the alias table, and the alias table is where
+  // `config.stubs` lives — so without this check, claiming a user's stub wins
+  // would be a lie for this entire namespace, and there would be no way at all
+  // to answer `react-native/Libraries/Utilities/Platform` properly. Anything the
+  // config speaks for, this plugin stays out of. `config.redirect` is handled by
+  // registering that plugin first; whoever answers first, wins.
+  const spokenFor = new Set(Object.keys(config.stubs ?? {}))
+
   return {
     name: 'shots-rn-subpath',
     setup(b) {
-      b.onResolve({ filter: /^react-native\// }, () => ({ path: stub('rn-internal.ts') }))
+      b.onResolve({ filter: /^react-native\// }, (args) =>
+        spokenFor.has(args.path) ? null : { path: stub('rn-internal.ts') },
+      )
     },
   }
 }
@@ -390,9 +434,25 @@ export async function bundle(config) {
     alias['react-dom/client'] = own.resolve('react-dom/client')
   }
 
-  // The tab bar wants lucide; if the app doesn't have it, fall back to labels.
+  /**
+   * The tab bar wants lucide; if the app doesn't have it, fall back to labels.
+   *
+   * NOT AN ALIAS, when it is there. An alias to the package's *directory* is how
+   * this used to be done, and it quietly did the wrong thing twice over: esbuild
+   * resolves a directory the old way, through `main` — so it ignored `browser`
+   * and `import` and bundled lucide's **CJS** build, which is why a missing name
+   * came back `undefined` with no warning at all rather than as an error. And a
+   * modern package with only an `exports` map has no `main` to find, so the
+   * alias could not resolve it at all.
+   *
+   * A nodePath instead: esbuild resolves the bare name with its real resolver,
+   * conditions and all. The only reason it needs help is that `TabBar.tsx` lives
+   * in this tool, not in the app, so the ordinary directory walk never reaches
+   * the app's node_modules.
+   */
   const lucide = fromApp('lucide-react-native', projectRoot)
-  alias['lucide-react-native'] = lucide ? dirname(lucide) : stub('lucide-empty.ts')
+  if (lucide) nodePaths.unshift(nodeModulesOf(lucide, 'lucide-react-native'))
+  else alias['lucide-react-native'] = stub('lucide-empty.ts')
 
   // FALLING BACK TO THE EMPTY STUB IS A LOUD EVENT, NOT A QUIET ONE.
   //
@@ -436,7 +496,9 @@ export async function bundle(config) {
     jsx: 'automatic',
     alias,
     nodePaths,
-    plugins: [rnSubpath(), redirectPlugin(config)],
+    // The user's redirects go FIRST: plugins are consulted in order, so this is
+    // what lets a config out-argue the react-native subpath catch-all below it.
+    plugins: [redirectPlugin(config), rnSubpath(config)],
     // `.web.js` first: this is how react-native-svg and friends ship their
     // browser implementations.
     resolveExtensions: ['.web.tsx', '.web.ts', '.web.jsx', '.web.js', '.tsx', '.ts', '.jsx', '.js', '.json'],
@@ -477,12 +539,17 @@ export async function bundle(config) {
    * esbuild's warnings are findings, not chatter — and the one that matters is
    * `import-is-undefined`.
    *
-   * A stub that re-exports with `export *` cannot be checked statically, so a
-   * name it does not have is not an error: esbuild shrugs, hands the app
-   * `undefined`, and prints a warning nobody reads because the run says it
-   * succeeded. Then `Notifications.setBadgeCountAsync(0).catch(…)` throws at the
-   * *call* — before there is a `.catch` to catch it — and one screen photographs
-   * as nothing for a reason that was on screen at bundle time.
+   * A *named* import of a name a stub does not have is a hard error, and that is
+   * the good case: the run stops and says which name. But the same mistake
+   * reached through a *namespace* is only a warning —
+   *
+   *     import * as Notifications from 'expo-notifications'
+   *     Notifications.setBadgeCountAsync(0).catch(…)
+   *
+   * — because `ns.foo` is a property access, and esbuild resolves it to
+   * `undefined`, says so in a line that scrolls past a run which then reports
+   * success, and lets the page throw at the *call*, before there is a `.catch`
+   * to catch anything. A line that looks guarded takes the screen down.
    *
    * So they are collected and reported with everything else the run found.
    */
@@ -519,19 +586,19 @@ function resolveExtraStubs(config, projectRoot) {
  * wrapper, an analytics client), which an alias cannot catch. `config.redirect`
  * matches the tail of the import path instead.
  *
- * IT MATCHES WHAT THE IMPORT SAYS, NOT WHAT THE IMPORT REACHES.
+ * IT MATCHES WHAT AN IMPORT SAYS, NOT WHERE THE IMPORT LANDS — and the two come
+ * apart more often than they look like they should. One file has as many
+ * specifiers as it has importers: `./Chart`, `../components/Chart`,
+ * `@/components/Chart` and `~/components/Chart` are four different strings for
+ * the same module, and a rule has to match the one esbuild is actually handed.
+ * (A barrel is *not* an example: `export * from './Chart'` is itself an import
+ * of `./Chart`, so a rule keyed on `Chart$` does fire there. That was worth
+ * checking rather than assuming — it had been written down here as a trap, and
+ * it is not one.)
  *
- * This is the whole of the trap, and the pattern always looks right. A rule
- * keyed on `InteractiveLineChart$` catches `import … from './InteractiveLineChart'`
- * and nothing else — so when the app reaches that component through a barrel
- * (`./components/performance`, which re-exports it with `export *`), the import
- * specifier esbuild sees is the *barrel's* path. The rule never fires, the
- * component is bundled anyway, and everything it drags in comes with it. The
- * redirect looks configured and is inert.
- *
- * `config.redirectFile` is the answer when that happens: it matches the resolved
- * path on disk, which a barrel cannot disguise. It costs a second resolve pass
- * for every import in the bundle, so it is only wired up when it is asked for.
+ * `config.redirectFile` matches the resolved path on disk instead, which is one
+ * string no matter how many ways the app spells it. It costs a second resolve
+ * pass for every import in the bundle, so it is only wired up when asked for.
  */
 function redirectPlugin(config) {
   const at = (target) => (isAbsolute(target) ? target : resolve(config.projectRoot, target))

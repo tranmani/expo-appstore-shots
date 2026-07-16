@@ -41,19 +41,30 @@ const IDLE = '#0B0B0B'
  */
 function reportIcons(items: { id: string; icon?: string }[]) {
   const w = window as unknown as Record<string, unknown>
+  const names = Object.keys(icons)
+
+  // Read off the key list, NOT as `icons.__shotsLucideMissing`.
+  //
+  // A static member access on a namespace is something esbuild checks, and when
+  // the real lucide is bundled that name is not in it — so the sentinel check
+  // *itself* raised "Import __shotsLucideMissing will always be undefined" on
+  // every app that has lucide installed. A diagnostic that fires on the healthy
+  // case is worse than no diagnostic: it is the thing that teaches people to
+  // ignore the warnings.
+  const absent = names.includes('__shotsLucideMissing')
 
   // No lucide at all: every name is "missing", which is true and useless. The
   // one fact worth saying is said once, at bundle time, by build.mjs — saying it
   // again here per icon would bury the findings that are about this app.
-  if ((icons as Record<string, unknown>).__shotsLucideMissing) {
+  if (absent) {
     w.__SHOTS_ICON_NAMES__ = []
     w.__SHOTS_ICONS_MISSING__ = []
     return
   }
 
-  w.__SHOTS_ICON_NAMES__ = Object.keys(icons)
+  w.__SHOTS_ICON_NAMES__ = names
   w.__SHOTS_ICONS_MISSING__ = items
-    .filter((i) => i.icon && !(i.icon in icons))
+    .filter((i) => i.icon && !names.includes(i.icon))
     .map((i) => ({ tab: i.id, icon: i.icon }))
 }
 

@@ -52,8 +52,12 @@ export function codegenNativeCommands<T extends { supportedCommands: readonly st
 ): Record<string, () => void> {
   const out: Record<string, () => void> = {}
   for (const name of options?.supportedCommands ?? []) out[name] = () => undefined
-  // Unlisted commands still have to answer, so anything not declared is a no-op too.
-  return new Proxy(out, { get: (t, p) => (p in t ? t[p as string] : () => undefined) })
+  // Unlisted commands still have to answer, so anything not declared is a no-op
+  // too — except `then`, which must stay undefined or this object is a thenable
+  // that hangs any `await` on it forever.
+  return new Proxy(out, {
+    get: (t, p) => (p === 'then' ? undefined : p in t ? t[p as string] : () => undefined),
+  })
 }
 
 /** `codegenNativeComponent` names a native view. There isn't one; draw nothing. */

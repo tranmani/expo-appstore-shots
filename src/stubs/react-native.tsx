@@ -12,6 +12,7 @@
  */
 import * as RNW from 'react-native-web'
 import { forwardRef, useCallback, useLayoutEffect, useRef } from 'react'
+import { anything } from './anything'
 
 export * from 'react-native-web'
 
@@ -31,10 +32,20 @@ export const DevSettings = {
   reload: () => undefined,
 }
 
-/** `getEnforcing` is named for what it does: it throws when the module is absent. It must not. */
+/**
+ * `getEnforcing` is named for what it does: it throws when the module is absent.
+ * It must not — but it must not hand back `{}` either.
+ *
+ * A package does not call `getEnforcing('Foo')` to look at it; it calls it and
+ * then uses it, at module scope: `getEnforcing('Foo').addListener(…)`. An empty
+ * object answers the first half and throws on the second, which is a crash with
+ * a friendly name rather than a stub. `get` may return null — callers check it,
+ * that is why it exists — but whatever `getEnforcing` returns has to survive
+ * being used.
+ */
 export const TurboModuleRegistry = {
   get: () => null,
-  getEnforcing: () => ({}),
+  getEnforcing: () => anything(),
 }
 
 type TextProps = React.ComponentProps<typeof RNW.Text> & {

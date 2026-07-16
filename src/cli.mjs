@@ -227,11 +227,16 @@ async function shoot() {
   for (const w of built.warnings ?? []) console.warn(`  ! ${w}`)
 
   step(`serving the mock backend on :${config.apiPort}`)
+  // freePort() checked this port before the bundle, which takes seconds — long
+  // enough for another run to take it in the meantime. `serve()` rejects with a
+  // sentence explaining exactly that, and without this it would arrive as an
+  // uncaught exception with a stack trace, which is the thing that sentence was
+  // written to replace.
   const server = await serve({
     port: config.apiPort,
     dist: config.workDir,
     fixtures: fixtures.default ?? fixtures,
-  })
+  }).catch((e) => fail(e.message))
 
   const browser = await chromium.launch(
     process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {},

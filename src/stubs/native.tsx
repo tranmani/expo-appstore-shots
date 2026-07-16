@@ -236,8 +236,16 @@ export const ScrollView_ = ScrollView
 export const FlatList_ = FlatList
 export const TextInput_ = TextInput
 
+/**
+ * `then` is excluded on purpose — see stubs/anything.ts. A proxy that answers
+ * `then` with a function is a thenable, so `await` on one hangs the render
+ * forever: a blank frame, no error, nothing to read.
+ */
 const chainable = (): Record<string, () => unknown> =>
-  new Proxy({}, { get: () => () => chainable() }) as Record<string, () => unknown>
+  new Proxy(
+    {},
+    { get: (_t, prop) => (prop === 'then' ? undefined : () => chainable()) },
+  ) as Record<string, () => unknown>
 
 export const Gesture = {
   Tap: chainable,
@@ -328,7 +336,14 @@ export const Easing = {
 const descriptor = (): unknown =>
   new Proxy(
     {},
-    { get: (_t, prop) => (prop === 'build' ? () => () => ({}) : () => descriptor()) },
+    {
+      get: (_t, prop) => {
+        // Not a thenable: `await` on one of these would never resolve, and a
+        // render that never finishes is a blank frame with no error at all.
+        if (prop === 'then') return undefined
+        return prop === 'build' ? () => () => ({}) : () => descriptor()
+      },
+    },
   )
 
 /**

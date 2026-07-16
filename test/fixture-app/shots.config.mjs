@@ -9,7 +9,10 @@ export default {
     { id: 'home', module: 'src/app/index.tsx', route: 'index', tab: 'home' },
     // Not a slide — it is never framed. It is here so that the run compiles and
     // renders every import a modern native-heavy app makes. See the file.
-    { id: 'kitchen-sink', module: 'src/app/kitchen-sink.tsx', route: 'kitchen-sink', title: 'Kitchen sink' },
+    //
+    // Deliberately NO `title`: a config title would override the one the layout
+    // registers for this route, and it is that registration the screen asserts.
+    { id: 'kitchen-sink', module: 'src/app/kitchen-sink.tsx', route: 'kitchen-sink', header: true },
   ],
 
   tabBar: {

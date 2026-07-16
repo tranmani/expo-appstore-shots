@@ -62,6 +62,29 @@ function useDeclared() {
   return declared
 }
 
+/**
+ * ONE RE-RENDER, AFTER THE CHILDREN HAVE SPOKEN.
+ *
+ * `<Stack.Screen name="Home" options={{ title: 'Home' }} />` is the ordinary way
+ * to title a route, in expo-router and in React Navigation alike — and it did
+ * nothing here for as long as this stub existed. The registration happens in the
+ * *child's* effect; the header is rendered by the *parent* from `registered[…]`
+ * at render time; child effects run after their parent has already rendered, and
+ * nothing ever asked it to render again. So the options were written to a table
+ * that was only ever read too early, and every such title silently fell back.
+ *
+ * This is the ask-again. It cannot be a subscription like `useDeclared` above:
+ * `options={{…}}` is a fresh object on every render, so any "did it change?"
+ * test on identity is always true, and notify → re-render → notify is a loop
+ * that never lands. Mount is enough — by the time a parent's mount effect runs,
+ * every child has registered, and a screenshot has no later navigation to react
+ * to.
+ */
+function useRegistered() {
+  const [, bump] = useState(0)
+  useEffect(() => bump(1), [])
+}
+
 export const navigation = {
   goBack: () => undefined,
   canGoBack: () => true,
@@ -137,6 +160,7 @@ export function Stack({
   children?: ReactNode
 }) {
   const own = useDeclared()
+  useRegistered()
   const options = {
     ...(screenOptions ?? {}),
     ...(registered[target.route] ?? {}),

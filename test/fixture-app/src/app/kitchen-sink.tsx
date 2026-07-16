@@ -56,6 +56,10 @@ import * as Notifications from 'expo-notifications'
 // at module scope.
 import { Directory, File, Paths } from 'expo-file-system'
 import { dismissAuthSession, maybeCompleteAuthSession, openAuthSessionAsync } from 'expo-web-browser'
+// The same functions, from the package apps ACTUALLY import them from. They
+// lived in the stub already, but only expo-web-browser was pointed at it — so
+// this import reached the app's real expo-auth-session, and its native side.
+import { makeRedirectUri, useAuthRequest } from 'expo-auth-session'
 
 // The native packages with no stub at all.
 import { Atlas, Canvas, Skia, useRSXformBuffer } from '@shopify/react-native-skia'
@@ -93,9 +97,35 @@ export default function KitchenSink() {
   const routeName = useNavigationState((state: { routes: { name: string }[] }) => state.routes[0]?.name)
   const progress = useSharedValue(1)
   const animatedProps = useAnimatedProps(() => ({ opacity: progress.value }))
+  const [authRequest] = useAuthRequest() as unknown[]
+  void authRequest
 
   useScrollToTop({ current: null } as never)
   useFocusEffect(() => undefined)
+
+  // `<Stack.Screen name="kitchen-sink" options={{ title: 'REGISTERED-TITLE' }} />`
+  // in _layout.tsx has to reach the header. Read back from the DOM after paint,
+  // because that is the only place the claim is either true or false — the
+  // screen cannot see its own header any other way.
+  //
+  // It was false. Named-route options were written to a table in an effect that
+  // nothing ever re-read, so every `<Stack.Screen name=…>` in every layout was
+  // inert. The old fixture could not catch it: its header fell back to the same
+  // string it registered.
+  useEffect(() => {
+    // On a tick, not in this effect: the layout's `<Stack.Screen name=…>` is a
+    // *child* of the Stack that draws the header, and child effects run before
+    // the parent's — so at this instant the registration has only just been
+    // written and the header has not been re-rendered from it yet. A screenshot
+    // is taken long after; this waits the same way.
+    const id = setTimeout(() => {
+      const page = document.body.textContent ?? ''
+      if (!page.includes('REGISTERED-TITLE')) {
+        throw new Error(`<Stack.Screen name> options never reached the header — it says "${page.slice(0, 40)}"`)
+      }
+    }, 150)
+    return () => clearTimeout(id)
+  }, [])
 
   useEffect(() => {
     // The line that used to kill the screen: `undefined is not a function`
@@ -138,6 +168,9 @@ export default function KitchenSink() {
     'react-navigation/useNavigation': typeof navigation.navigate === 'function',
     'react-navigation-elements/useHeaderHeight': headerHeight > 0,
     'react-navigation-bottom-tabs/useBottomTabBarHeight': tabBarHeight > 0,
+    'expo-auth-session/makeRedirectUri': typeof makeRedirectUri() === 'string',
+    'react-native/TurboModuleRegistry.getEnforcing survives use':
+      typeof TurboModuleRegistry.getEnforcing('Anything').addListener === 'function',
     // config.setup ran, and finished, BEFORE this render. Not "eventually".
     'config.setup ran before mount': window.__SHOTS_SETUP_RAN__ === true,
   }

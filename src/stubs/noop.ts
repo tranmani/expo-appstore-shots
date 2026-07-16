@@ -124,6 +124,20 @@ export const FileSystemSessionType = { BACKGROUND: 0, FOREGROUND: 1 }
 export const maybeCompleteAuthSession = () => ({ type: 'failed', message: 'Not supported on web' })
 export const openAuthSessionAsync = async () => ({ type: 'dismiss' })
 export const dismissAuthSession = () => undefined
+
+/** expo-auth-session's own surface. Nobody signs in during a screenshot. */
+export const useAuthRequest = () => [null, null, async () => ({ type: 'dismiss' })]
+export const useAutoDiscovery = () => null
+export const makeRedirectUri = () => 'https://shots.local/redirect'
+export const exchangeCodeAsync = async () => ({ accessToken: 'shots' })
+export const refreshAsync = async () => ({ accessToken: 'shots' })
+export const revokeAsync = async () => true
+export const fetchDiscoveryAsync = async () => ({})
+export const loadAsync = async () => ({ promptAsync: async () => ({ type: 'dismiss' }) })
+export const AuthRequest = class {}
+export const ResponseType = { Code: 'code', Token: 'token', IdToken: 'id_token' }
+export const Prompt = { None: 'none', Login: 'login', Consent: 'consent', SelectAccount: 'select_account' }
+export const CodeChallengeMethod = { S256: 'S256', Plain: 'plain' }
 export const openBrowserAsync = async () => ({ type: 'dismiss' })
 export const dismissBrowser = () => ({ type: 'dismiss' })
 export const warmUpAsync = async () => ({})

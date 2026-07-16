@@ -71,7 +71,40 @@ export const useNavigationState = <T,>(selector: (state: unknown) => T): T | und
 
 export const useNavigationContainerRef = () => ({ current: navigation, ...navigation })
 export const createNavigationContainerRef = () => ({ current: navigation, ...navigation, isReady: () => true })
-export const useNavigationBuilder = () => ({ state: {}, descriptors: {}, navigation, NavigationContent: ({ children }: { children?: ReactNode }) => <>{children}</> })
+
+/**
+ * For an app that builds its own navigator with `createNavigatorFactory`.
+ *
+ * The state has to be a real navigation state, not `{}`. A custom navigator's
+ * whole job is `state.routes.map(…)`, so an empty object is not a neutral
+ * placeholder — it is a TypeError on the first line of the app's own code.
+ */
+export const useNavigationBuilder = () => {
+  const target = getTarget()
+  const key = `${target.route}-shots`
+  const route = { key, name: target.route, params: target.params ?? {} }
+  return {
+    state: {
+      key: 'stack-shots',
+      index: 0,
+      type: 'stack',
+      stale: false as const,
+      routeNames: [target.route],
+      routes: [route],
+      history: [{ type: 'route', key }],
+    },
+    descriptors: {
+      [key]: {
+        options: {},
+        route,
+        navigation,
+        render: () => <target.component {...(target.params ?? {})} />,
+      },
+    },
+    navigation,
+    NavigationContent: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  }
+}
 
 /** Scroll position is the run's business (`config.screens[].scroll`), not the app's. */
 export const useScrollToTop = () => undefined
