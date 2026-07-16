@@ -231,7 +231,81 @@ Then check by eye what no tool can:
   tab bar, and the font — unless you pointed `fonts` at the app's own faces, in
   which case say that you did.
 
-## 8. If they need the store graphics too
+## 8. If the listing ships in more than one language
+
+The store shows a different screenshot set per localization, and the right set is
+not the base set with translated captions pasted over it — it is the **app itself
+rendered in that language**. Reviewers and users in a store region expect the
+chrome to be in their language too: the nav titles, the section headers, the
+buttons, the pluralised counts. You get all of that for free, because you are
+photographing the real screens; you just have to put the app into the language
+first.
+
+Do not fork the config. Keep `shots.config.mjs` as the default language, and add
+one thin `shots.<lang>.config.mjs` per extra language that imports the base and
+overrides **only** what changes:
+
+1. **The app's own language.** This is the whole point of the section. Flip the
+   app into the target language so the UI it draws is genuinely localised. A
+   locale-aware app reads the device locale, so set `runtime.locale`. But **most
+   apps persist the user's language choice** — a returning user picked it once and
+   it lives in storage — and such an app ignores the device locale entirely. So
+   also seed the key the app reads (an AsyncStorage key like `app.lang`) in
+   `runtime.storage`. Setting `locale` alone and getting an English screen back is
+   this trap, not a bug: find the key in the app's language code and seed it too.
+2. **`slides`** — the captions, translated. This is the marketing copy.
+3. **`outDir`** — a per-language folder (`appstore/en`, `appstore/nl`), so each
+   set uploads into the localization it belongs to and nothing overwrites.
+4. **Screen `params` that carry human text** — a room name, a thread title, a
+   header passed in rather than fetched. Override just those screens by mapping
+   over `base.screens`; leave the rest inherited.
+5. **`api.fixtures`, but only if the seeded content is human-readable text.** App
+   *generated* strings — interpolated counts, button labels, section headers —
+   localise on their own from step 1, so they need no second fixtures file. Only
+   the **free text a person wrote** — chat messages, post bodies, user handles —
+   has to differ per language, or an English screen shows Dutch content. Factor
+   the language-varying strings into a shared builder (`fixtures.base.mjs`
+   exporting `makeFixtures(strings)`) plus a thin string table per language
+   (`fixtures.mjs`, `fixtures.nl.mjs`), and point each config's `api.fixtures` at
+   the matching one. **Do not translate proper nouns** — place names, station
+   codes, numbers stay as they are.
+
+Everything else — `rootLayout`, the screen modules, `tabBar`, `frame`, `devices`
+— is inherited untouched. Because the paths in the base config are resolved
+relative to whichever config file loaded them, the sibling `shots.nl.config.mjs`
+resolves them exactly as the base did.
+
+```js
+// shots.nl.config.mjs — Dutch. Everything not named here is the base config.
+import base from './shots.config.mjs'
+
+export default {
+  ...base,
+  outDir: 'appstore/nl',
+  runtime: {
+    ...base.runtime,
+    locale: 'nl-NL',
+    storage: { ...base.runtime.storage, 'app.lang': 'nl' }, // the persisted choice
+  },
+  // Only screens whose params carry human text; the rest stay as inherited.
+  screens: base.screens.map((s) =>
+    s.id === 'room' ? { ...s, params: { ...s.params, title: 'Perron 3' } } : s,
+  ),
+  api: { fixtures: 'shots/fixtures.nl.mjs' }, // human-readable seeded content only
+  slides: [
+    { screen: 'home', headline: 'Alles op één perron.', ground: 'dark', file: '01-home.png' },
+    // …one per screenshot, in upload order, translated.
+  ],
+}
+```
+
+Run it once per language — `npx expo-appstore-shots shots.nl.config.mjs` (the first
+`.mjs` argument is the config it loads) — **verify each set by eye the same way as
+§7**, and upload each `outDir` into the matching App Store Connect / Play Console
+localization. The payoff is the point: every set is the real localised app, not a
+translation laid over one language's screens.
+
+## 9. If they need the store graphics too
 
 Publishing on Play needs a **512×512 icon** and a **1024×500 feature graphic** before
 the listing will go live; App Store Connect wants a **1024×1024 marketing icon**. When
@@ -260,7 +334,7 @@ If the app has neither a wordmark you can copy nor a one-line description, **ask
 this is the store listing, and inventing a tagline for somebody's product is not your
 call.
 
-## 9. What to say when you are done
+## 10. What to say when you are done
 
 Where the frames are, what each one shows, what you seeded, and anything you
 noticed while doing it — a truncated label, an empty state, a screen that does

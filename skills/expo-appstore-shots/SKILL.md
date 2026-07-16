@@ -78,4 +78,17 @@ or point `CHROME_PATH` at an installed Chrome.
 (1024×500) and marketing icon (1024²) from the app's own icon and brand — do not
 draw them. Look at the output: the feature graphic wants the **bare mark**, not the
 tile; set `promoVideo: true` if the listing has a video so the lockup clears the
-stamped play button. See AGENTS.md §8.
+stamped play button. See AGENTS.md §9.
+
+## More than one App Store language (when asked)
+
+One screenshot set per localization — and the right set is the **app rendered in
+that language**, not translated captions over one language's screens. Add a thin
+`shots.<lang>.config.mjs` per language that `import base from './shots.config.mjs'`
+and overrides only what changes: flip the app's language (set `runtime.locale`
+**and**, for an app that persists its choice, the stored key like `app.lang` in
+`runtime.storage` — locale alone is ignored otherwise), the `slides` captions, a
+per-language `outDir`, screen `params` that carry human text, and `api.fixtures`
+only when the seeded content is human-readable free text. Run once per config
+(`npx expo-appstore-shots shots.nl.config.mjs`) and upload each `outDir` into its
+matching localization. Full recipe in AGENTS.md §8.
