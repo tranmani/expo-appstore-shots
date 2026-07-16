@@ -195,7 +195,9 @@ function nativeAliases() {
     'expo-status-bar': stub('expo-status-bar.ts'),
     'expo-constants': stub('expo-constants.ts'),
     'expo-image': stub('expo-image.tsx'),
-    'expo-image-picker': stub('noop.ts'),
+    'expo-image-picker': stub('expo-image-picker.ts'),
+    'expo-camera': stub('expo-camera.tsx'),
+    'expo-media-library': stub('expo-image-picker.ts'),
     '@expo/vector-icons': stub('vector-icons.tsx'),
     'react-native-webview': stub('webview.tsx'),
     '@react-native-community/datetimepicker': stub('datetimepicker.tsx'),
@@ -407,6 +409,20 @@ export async function bundle(config) {
   const nodePaths = [
     nodeModulesOf(own.resolve('react-native-web/package.json'), 'react-native-web'),
     resolve(here, '..', 'node_modules'),
+    // And the app's own, LAST — for the files that are not in the app.
+    //
+    // `rootLayout` and `setup` are often kept outside the app on purpose, so the
+    // app's repo stays clean (see examples/). esbuild resolves a bare import
+    // from the importer's directory, and there is no node_modules next to a
+    // config file — so a root layout that mounts the app's own providers
+    // (`@gorhom/portal`, a nav container) could not resolve a single one of
+    // them, while the identical import from inside the app resolved fine. The
+    // error named the package and not the reason, which is the worst kind.
+    //
+    // Last, not first: this is a fallback for files the ordinary directory walk
+    // cannot help, and the tool's own web stack should keep winning for the
+    // handful of names both sides have.
+    resolve(projectRoot, 'node_modules'),
   ].filter((d, i, all) => existsSync(d) && all.indexOf(d) === i)
 
   const appReact = fromApp('react', projectRoot)

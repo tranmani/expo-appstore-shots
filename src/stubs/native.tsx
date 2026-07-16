@@ -98,6 +98,13 @@ export const modelName = 'iPhone 16 Pro'
 export const osName = 'iOS'
 export const osVersion = '26.0'
 export const brand = 'Apple'
+/** A phone, not a tablet — `Device.deviceType === Device.DeviceType.TABLET` is a real branch. */
+export const DeviceType = { UNKNOWN: 0, PHONE: 1, TABLET: 2, DESKTOP: 3, TV: 4 }
+export const deviceType = DeviceType.PHONE
+export const getDeviceTypeAsync = async () => DeviceType.PHONE
+export const deviceName = 'iPhone'
+export const manufacturer = 'Apple'
+export const isRootedExperimentalAsync = async () => false
 export const getLocales = () => {
   const tag = runtime().locale
   return [{ languageCode: tag.split('-')[0], languageTag: tag, regionCode: tag.split('-')[1] ?? null }]
@@ -268,8 +275,67 @@ export const Directions = { RIGHT: 1, LEFT: 2, UP: 4, DOWN: 8 }
  * took 200ms to arrive. Worklets need a Babel plugin esbuild does not run, so
  * they are replaced by plain functions.
  */
-export const useSharedValue = <T,>(v: T) => ({ value: v })
-export const useDerivedValue = <T,>(fn: () => T) => ({ value: fn() })
+/**
+ * A shared value.
+ *
+ * `{ value }` is most of what a screen touches, and for a long time that was all
+ * this was. It is not all a *library* touches: a shared value also has
+ * `.modify()`, `.get()`, `.set()` and listeners, and @gorhom/bottom-sheet builds
+ * its whole layout out of them (`containerLayoutState.modify(…)`). A missing
+ * method there is not a missing animation — it is a TypeError inside a provider
+ * wrapped around the entire app, so *every* screen fails to render, and the app
+ * never called the thing that broke.
+ */
+function mutable<T>(initial: T) {
+  const m = {
+    value: initial,
+    get: () => m.value,
+    set: (next: T | ((prev: T) => T)) => {
+      m.value = typeof next === 'function' ? (next as (p: T) => T)(m.value) : next
+    },
+    /** Reanimated's in-place update. Returns the value, and must not throw. */
+    modify: (fn?: (prev: T) => T) => {
+      if (fn) m.value = fn(m.value)
+      return m.value
+    },
+    addListener: () => undefined,
+    removeListener: () => undefined,
+  }
+  return m
+}
+
+/**
+ * STABLE ACROSS RENDERS, which the one-liner it replaced was not.
+ *
+ * A real shared value is the same object for the life of the component. Minting
+ * a new one every render is invisible until something depends on its identity —
+ * `useEffect(…, [progress])` then fires forever, and a render loop is not an
+ * error, it is a capture that never settles and a frame that never arrives.
+ */
+export const useSharedValue = <T,>(v: T) => {
+  const ref = useRef<ReturnType<typeof mutable<T>> | null>(null)
+  if (!ref.current) ref.current = mutable(v)
+  return ref.current
+}
+
+export const useDerivedValue = <T,>(fn: () => T) => {
+  try {
+    return mutable(fn())
+  } catch {
+    return mutable(undefined as T)
+  }
+}
+
+/** `useSharedValue` without the hook — a shared value made outside a component. */
+export const makeMutable = <T,>(v: T) => mutable(v)
+export const makeShareable = <T,>(v: T) => v
+export const makeShareableCloneRecursive = <T,>(v: T) => v
+export const isSharedValue = (v: unknown) => Boolean(v && typeof v === 'object' && 'value' in v)
+
+/** Motion the OS has been asked to reduce. A still frame has no motion to reduce. */
+export const ReduceMotion = { System: 'system', Always: 'always', Never: 'never' }
+export const useReducedMotion = () => false
+export const getReduceMotionFromConfig = () => false
 export const useAnimatedStyle = (fn: () => Record<string, unknown>) => {
   try {
     return fn()
@@ -485,13 +551,34 @@ function animated<P extends Record<string, unknown>>(Base: React.ComponentType<P
   }
 }
 
+/**
+ * The default export, which is a namespace as well as a component factory.
+ *
+ * `Animated.View` is what an app writes, so that is what this mostly is — but
+ * the *registration* functions are what a library writes, at module scope, and
+ * they are not optional. `Animated.addWhitelistedUIProps({…})` is how a package
+ * teaches reanimated about a prop it wants to animate; react-native-calendars
+ * and friends call it on import, long before anything renders, and a missing one
+ * is not a missing animation. It is `addWhitelistedUIProps is not a function`,
+ * thrown while the module is still loading, which takes every screen in the run
+ * with it — from a package the app never called directly.
+ */
 export const Reanimated = {
   View: animated(View),
   ScrollView: animated(ScrollView),
   Text: animated(View),
   Image: animated(View),
+  FlatList: animated(FlatList),
   createAnimatedComponent: animated,
+  addWhitelistedUIProps: () => undefined,
+  addWhitelistedNativeProps: () => undefined,
+  createAnimatedPropAdapter: <T,>(fn: T) => fn,
 }
+
+export const addWhitelistedUIProps = Reanimated.addWhitelistedUIProps
+export const addWhitelistedNativeProps = Reanimated.addWhitelistedNativeProps
+export const createAnimatedPropAdapter = Reanimated.createAnimatedPropAdapter
+export const createAnimatedComponent = animated
 
 /* ---------------------------------------------------- @shopify/flash-list --- */
 
