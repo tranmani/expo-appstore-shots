@@ -7,6 +7,23 @@ tells you what to look for and what to do when it is not there.
 The goal is screenshots of the **real screens**. Do not fall back to drawing
 mock-ups, and do not ship a frame you have not looked at.
 
+## For AI agents / skills
+
+A ready-to-use, agent-agnostic skill ships in this package at
+[`skills/expo-appstore-shots/SKILL.md`](skills/expo-appstore-shots/SKILL.md) — the
+same procedure as this file, distilled for auto-discovery. This AGENTS.md stays the
+authority; the skill points back to it. How each ecosystem loads it:
+
+- **Claude Code** — copy or symlink `skills/expo-appstore-shots/` into the project's
+  or user's `.claude/skills/`; it loads `.claude/skills/<name>/SKILL.md`.
+- **Gemini CLI** — reference the skill file from `GEMINI.md`, or point the agent at
+  `skills/expo-appstore-shots/SKILL.md` directly.
+- **OpenAI Codex / GPT and other AGENTS.md-aware agents** — nothing to install; they
+  already read this file, so this pointer suffices.
+
+See [`skills/README.md`](skills/README.md) for the per-agent install commands. The
+rest of this document is the full procedure.
+
 Two steps are not optional. **Step 2**: once you have read the app, stop and ask
 the developer what the set should say — the code cannot tell you that, and the
 cheapest time to be wrong about it is before you have made six frames. **Step 7**:
