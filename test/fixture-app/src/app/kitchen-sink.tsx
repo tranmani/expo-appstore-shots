@@ -17,8 +17,8 @@
  * gesture-handler exported under a different name, or the badge call that threw
  * straight through its own `.catch`.
  */
-import { useEffect } from 'react'
-import { DevSettings, Text, TurboModuleRegistry, View } from 'react-native'
+import { useEffect, useRef } from 'react'
+import { DevSettings, InteractionManager, Text, TurboModuleRegistry, View } from 'react-native'
 
 // react-native internals, reached the way a native package reaches them: through
 // a subpath of a module that is aliased to a *file*. This is the import shape
@@ -32,6 +32,8 @@ import RNPlatform from 'react-native/Libraries/Utilities/Platform'
 
 // reanimated: the exiting half of the cross-product, and the newer APIs.
 import Animated, {
+  Extrapolation,
+  interpolate,
   CurvedTransition,
   EntryExitTransition,
   FadeIn,
@@ -47,6 +49,7 @@ import Animated, {
   SlideOutDown,
   SlideOutUp,
   useAnimatedProps,
+  useAnimatedStyle,
   useSharedValue,
 } from 'react-native-reanimated'
 
@@ -93,6 +96,30 @@ import pixel from './pixel.webp'
 maybeCompleteAuthSession()
 
 export default function KitchenSink() {
+  /**
+   * The deadlock, reproduced deliberately.
+   *
+   * This is exactly what a real screen does: show a skeleton, defer the real
+   * content to `runAfterInteractions`, swap it in when that runs. Under
+   * react-native-web's own InteractionManager it schedules with
+   * `requestIdleCallback` and no timeout — and an app with an animated skeleton
+   * is never idle, so it never runs, and the screenshot is of the skeleton. The
+   * shimmer starves the callback that would remove the shimmer.
+   *
+   * A `<Text>` that never changes would prove nothing; the assertion is that
+   * this flips before the frame is taken.
+   */
+  // Refs, not state: the assertion runs from a timer that would otherwise close
+  // over whatever these were at mount — which is exactly `false` — and report a
+  // failure that had already been fixed a tick earlier.
+  const interactionsRan = useRef(false)
+  useEffect(() => {
+    const handle = InteractionManager.runAfterInteractions(() => {
+      interactionsRan.current = true
+    })
+    return () => handle.cancel()
+  }, [])
+
   const navigation = useNavigation()
   const route = useRoute()
   const focused = useIsFocused()
@@ -100,7 +127,12 @@ export default function KitchenSink() {
   const tabBarHeight = useBottomTabBarHeight()
   const routeName = useNavigationState((state: { routes: { name: string }[] }) => state.routes[0]?.name)
   const progress = useSharedValue(1)
-  const animatedProps = useAnimatedProps(() => ({ opacity: progress.value }))
+  // `accessibilityLabel` because it lands in the DOM as `aria-label`, where the
+  // assertion below can see whether the wrapper actually passed it on.
+  const animatedProps = useAnimatedProps(() => ({
+    opacity: progress.value,
+    accessibilityLabel: 'animated-props-arrived',
+  }))
   const [authRequest] = useAuthRequest() as unknown[]
   void authRequest
 
@@ -116,17 +148,62 @@ export default function KitchenSink() {
   // nothing ever re-read, so every `<Stack.Screen name=…>` in every layout was
   // inert. The old fixture could not catch it: its header fell back to the same
   // string it registered.
+  /**
+   * A shared value written AFTER mount, the way `onLayout` writes a measured
+   * width — the pattern that rendered every progress bar at `opacity: 0`.
+   *
+   * The proof is that the worklet RE-RUNS: it records what it computed each
+   * time, so a `1` in here can only mean it was evaluated again after the
+   * write. Reading `measured.value` back instead would prove nothing — the
+   * write always landed; it just never reached the screen.
+   */
+  const measured = useSharedValue(0)
+  /** The last value the worklet actually SAW. Not the last value written. */
+  const lastSeen = useRef<number>(-1)
+  useAnimatedStyle(() => {
+    lastSeen.current = measured.value
+    return { opacity: measured.value > 0 ? 1 : 0 }
+  })
+
   useEffect(() => {
     // On a tick, not in this effect: the layout's `<Stack.Screen name=…>` is a
     // *child* of the Stack that draws the header, and child effects run before
     // the parent's — so at this instant the registration has only just been
     // written and the header has not been re-rendered from it yet. A screenshot
     // is taken long after; this waits the same way.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- read at fire time, on purpose
     const id = setTimeout(() => {
       const page = document.body.textContent ?? ''
       if (!page.includes('REGISTERED-TITLE')) {
         throw new Error(`<Stack.Screen name> options never reached the header — it says "${page.slice(0, 40)}"`)
       }
+      // Deferred work must have run by now. On a device this resolves in a
+      // frame; here it used to wait for an idle the shimmer never allowed.
+      if (!interactionsRan.current) {
+        throw new Error('InteractionManager.runAfterInteractions never ran — a skeleton would be photographed')
+      }
+
+      // `animatedProps` must reach the element, not just be computed. The
+      // wrapper used to `void` them: the worklet ran, produced the right
+      // values, and they were dropped on the floor.
+      if (!document.querySelector('[aria-label="animated-props-arrived"]')) {
+        throw new Error('animatedProps never reached the element — the wrapper discarded them')
+      }
+
+      // Isolated on purpose. Writing at mount proves nothing: the Stack's own
+      // post-mount re-render sweeps the whole tree and the worklet re-runs for
+      // an unrelated reason, so the assertion passes with reactivity removed.
+      // This writes LATE, once the tree is quiet, and nothing but the write can
+      // account for the worklet seeing it.
+      measured.value = 4242
+      setTimeout(() => {
+        if (lastSeen.current !== 4242) {
+          throw new Error(
+            `a shared-value write never re-ran useAnimatedStyle (worklet last saw ${lastSeen.current}) — ` +
+              `every style computed from a measured value is stuck on its first render`,
+          )
+        }
+      }, 0)
     }, 150)
     return () => clearTimeout(id)
   }, [])
@@ -175,6 +252,25 @@ export default function KitchenSink() {
     'expo-auth-session/makeRedirectUri': typeof makeRedirectUri() === 'string',
     'rn-internal/Platform.OS is a real platform': RNPlatform.OS === 'ios' || RNPlatform.OS === 'android',
     'rn-internal/Platform.select picks a branch': RNPlatform.select({ ios: 'yes', default: 'no' }) === 'yes',
+
+    // THE ONE THAT MADE A WHOLE TAB BAR INVISIBLE. `interpolate` was `(x) => x`,
+    // so a bar at rest asking "how opaque am I?" was told 0 instead of 1 — and
+    // it rendered, correctly, fully transparent, in every frame.
+    'reanimated/interpolate maps a range': interpolate(0, [0, 80], [1, 0], Extrapolation.CLAMP) === 1,
+    'reanimated/interpolate at the far end': interpolate(80, [0, 80], [1, 0], Extrapolation.CLAMP) === 0,
+    'reanimated/interpolate midpoint': interpolate(40, [0, 80], [1, 0]) === 0.5,
+    'reanimated/interpolate clamps': interpolate(999, [0, 80], [1, 0], Extrapolation.CLAMP) === 0,
+
+    // A write to a shared value has to reach the screen, or a style computed
+    // from it keeps whatever it said on the first render. The subscription is
+    // asserted below, in an effect; this only proves the write lands.
+    'reanimated/shared value takes a write': (() => {
+      progress.value = 0.25
+      const ok = progress.value === 0.25
+      progress.value = 1
+      return ok
+    })(),
+    'reanimated/useAnimatedProps evaluates the worklet': animatedProps.opacity === 1,
     'react-native/TurboModuleRegistry.getEnforcing survives use':
       typeof TurboModuleRegistry.getEnforcing('Anything').addListener === 'function',
     // config.setup ran, and finished, BEFORE this render. Not "eventually".

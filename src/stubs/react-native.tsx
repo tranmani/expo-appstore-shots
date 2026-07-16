@@ -33,6 +33,60 @@ export const DevSettings = {
 }
 
 /**
+ * THE SKELETON THAT NEVER LEAVES.
+ *
+ * The best kind of bug: every part behaves exactly as designed, and the result
+ * is a photograph of a loading state that can never finish.
+ *
+ * A screen defers its post-mount work — "fill this card in once the animations
+ * have settled" — with `InteractionManager.runAfterInteractions(…)`, and shows a
+ * skeleton until it runs. react-native-web schedules that with
+ * `requestIdleCallback` and **no timeout**, so it waits for an idle frame. The
+ * skeleton is a shimmer: an infinite `Animated.loop`, which on web is rAF. The
+ * page therefore never goes idle, the callback never runs, and the skeleton
+ * never turns itself off. The shimmer starves the callback that would remove the
+ * shimmer.
+ *
+ * On a device it resolves in a frame and nobody ever sees it. Here it is a
+ * permanent grey rectangle where the product should be — with no error, no
+ * warning, and a run that reports success.
+ *
+ * So interactions do not exist here, for the same reason `useFocusEffect` runs
+ * once and never blurs: a still frame has nothing to wait for. The task runs on
+ * the next macrotask — still asynchronous, so the ordering the caller asked for
+ * holds, minus the waiting.
+ */
+type Task = (() => void) | { run?: () => void; gen?: () => void }
+
+export const InteractionManager = {
+  ...(RNW.InteractionManager as object),
+  runAfterInteractions(task?: Task) {
+    let cancelled = false
+    const done = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        if (!cancelled) {
+          if (typeof task === 'function') task()
+          else task?.run?.()
+        }
+        resolve()
+      }, 0)
+    })
+    // RN hands back `{ then, done, cancel }`, and callers use all three.
+    return {
+      then: done.then.bind(done),
+      done: done.then.bind(done),
+      cancel: () => {
+        cancelled = true
+      },
+    }
+  },
+  createInteractionHandle: () => 1,
+  clearInteractionHandle: () => undefined,
+  setDeadline: () => undefined,
+  addListener: () => ({ remove: () => undefined }),
+}
+
+/**
  * `getEnforcing` is named for what it does: it throws when the module is absent.
  * It must not — but it must not hand back `{}` either.
  *

@@ -286,17 +286,68 @@ export const Directions = { RIGHT: 1, LEFT: 2, UP: 4, DOWN: 8 }
  * wrapped around the entire app, so *every* screen fails to render, and the app
  * never called the thing that broke.
  */
+/**
+ * A WRITE HAS TO REACH THE SCREEN.
+ *
+ * On a device a shared value is watched: write `progress.value = 1` and every
+ * `useAnimatedStyle` that read it re-runs on the UI thread. Here the write went
+ * into a plain object and nothing ever looked again — so a style computed from
+ * it kept whatever it happened to say on the first render, forever.
+ *
+ * That reads as a subtle timing detail and is not. The pattern that breaks is
+ * ordinary: measure in `onLayout`, store the width in a shared value, and set
+ * `opacity: width > 0 ? 1 : 0` so the bar does not flash before it knows its own
+ * size. First render has no layout, so opacity is 0; the write lands; nothing
+ * re-renders; the element is invisible in every frame. Every progress bar in the
+ * app, empty, with the correct width sitting in the DOM behind `opacity: 0`.
+ *
+ * So writes notify, and the hooks below subscribe. Coalesced on a microtask
+ * (one re-render per burst, not one per write) and only when the value actually
+ * changed, which is what keeps write → render → write from spinning.
+ */
+const watchers = new Set<() => void>()
+let pending = false
+
+function notify() {
+  if (pending) return
+  pending = true
+  queueMicrotask(() => {
+    pending = false
+    watchers.forEach((w) => w())
+  })
+}
+
+/** Re-render this component when any shared value changes. */
+function useWatchValues() {
+  const [, bump] = useState(0)
+  useEffect(() => {
+    const w = () => bump((n) => n + 1)
+    watchers.add(w)
+    return () => {
+      watchers.delete(w)
+    }
+  }, [])
+}
+
 function mutable<T>(initial: T) {
+  let current = initial
   const m = {
-    value: initial,
-    get: () => m.value,
+    get value() {
+      return current
+    },
+    set value(next: T) {
+      if (Object.is(current, next)) return
+      current = next
+      notify()
+    },
+    get: () => current,
     set: (next: T | ((prev: T) => T)) => {
-      m.value = typeof next === 'function' ? (next as (p: T) => T)(m.value) : next
+      m.value = typeof next === 'function' ? (next as (p: T) => T)(current) : next
     },
     /** Reanimated's in-place update. Returns the value, and must not throw. */
     modify: (fn?: (prev: T) => T) => {
-      if (fn) m.value = fn(m.value)
-      return m.value
+      if (fn) m.value = fn(current)
+      return current
     },
     addListener: () => undefined,
     removeListener: () => undefined,
@@ -337,6 +388,7 @@ export const ReduceMotion = { System: 'system', Always: 'always', Never: 'never'
 export const useReducedMotion = () => false
 export const getReduceMotionFromConfig = () => false
 export const useAnimatedStyle = (fn: () => Record<string, unknown>) => {
+  useWatchValues()
   try {
     return fn()
   } catch {
@@ -350,6 +402,7 @@ export const useAnimatedStyle = (fn: () => Record<string, unknown>) => {
  * than taking the screen down with it.
  */
 export const useAnimatedProps = (fn: () => Record<string, unknown>) => {
+  useWatchValues()
   try {
     return fn()
   } catch {
@@ -376,8 +429,66 @@ export const runOnJS =
   (...a: A) =>
     fn(...a)
 export const runOnUI = runOnJS
-export const interpolate = (x: number) => x
-export const interpolateColor = (_x: number, _i: number[], out: string[]) => out[0]
+/**
+ * INTERPOLATE FOR REAL. It used to be `(x) => x`, and that is not a simplification
+ * — it is a different number.
+ *
+ * `opacity: interpolate(translateY.value, [0, 80], [1, 0], CLAMP)` is how a bar
+ * hides itself when it slides away. At rest `translateY` is 0, so the real answer
+ * is 1 — visible — and the identity function answered **0**. The component was
+ * correct, the shared value was correct, and the element rendered fully
+ * transparent. Nothing threw, nothing warned; a floating tab bar was simply
+ * absent from every frame of a run that reported success.
+ *
+ * That is the whole argument for doing this properly. A still frame does not need
+ * the animation, but it very much needs the *value the animation would rest at*,
+ * and there is no reason to guess it when the maths is eight lines.
+ */
+export function interpolate(
+  x: number,
+  input?: readonly number[],
+  output?: readonly number[],
+  extrapolate: string | { extrapolateLeft?: string; extrapolateRight?: string } = 'extend',
+): number {
+  if (!input || !output || input.length < 2 || output.length < 2) return x
+
+  const mode = typeof extrapolate === 'string' ? extrapolate : 'extend'
+  const left = typeof extrapolate === 'string' ? mode : (extrapolate.extrapolateLeft ?? 'extend')
+  const right = typeof extrapolate === 'string' ? mode : (extrapolate.extrapolateRight ?? 'extend')
+
+  // Find the segment x falls in; the ranges are ordered, so a scan is enough.
+  let i = 0
+  while (i < input.length - 2 && x > input[i + 1]) i++
+
+  const [x0, x1] = [input[i], input[i + 1]]
+  const [y0, y1] = [output[i], output[i + 1]]
+
+  if (x < input[0]) {
+    if (left === 'clamp') return output[0]
+    if (left === 'identity') return x
+  }
+  if (x > input[input.length - 1]) {
+    if (right === 'clamp') return output[output.length - 1]
+    if (right === 'identity') return x
+  }
+
+  if (x1 === x0) return y0
+  return y0 + ((x - x0) / (x1 - x0)) * (y1 - y0)
+}
+
+/** The colour version, at the ends. A still frame lands on one or the other. */
+export const interpolateColor = (x: number, input: readonly number[], out: readonly string[]) => {
+  if (!input?.length || !out?.length) return out?.[0]
+  if (x <= input[0]) return out[0]
+  if (x >= input[input.length - 1]) return out[out.length - 1]
+  // Nearest stop: a blend would need a colour parser, and a still frame at rest
+  // is almost always sitting on a stop rather than between two.
+  let nearest = 0
+  for (let i = 1; i < input.length; i++) {
+    if (Math.abs(input[i] - x) < Math.abs(input[nearest] - x)) nearest = i
+  }
+  return out[Math.min(nearest, out.length - 1)]
+}
 export const Extrapolation = { CLAMP: 'clamp', EXTEND: 'extend', IDENTITY: 'identity' }
 export const Extrapolate = Extrapolation
 export const Easing = {
@@ -537,7 +648,20 @@ export class Keyframe {
 }
 export const LayoutAnimationConfig = ({ children }: { children?: ReactNode }) => <>{children}</>
 
-/** Strip the animation-only props; render the plain view underneath. */
+/**
+ * Strip the animation-only props; render the plain view underneath — but keep
+ * `animatedProps`, which are not animation-only. They are props.
+ *
+ * This used to `void animatedProps` next to the others, and the effect was
+ * quietly absurd: `useAnimatedProps` evaluated the worklet, worked out the right
+ * values, handed them over — and the wrapper threw them in the bin. The whole
+ * point of that prop is to compute something a style cannot (a circle's
+ * `strokeDashoffset`, a slider's `value`, an input's `text`), so discarding it
+ * meant every one of those rendered at its initial value and nothing said why.
+ *
+ * `text` is remapped because it is the RN trick for driving a TextInput without
+ * a re-render; on web the same idea is spelled `value`.
+ */
 function animated<P extends Record<string, unknown>>(Base: React.ComponentType<P>) {
   return function AnimatedView(props: P) {
     const { entering, exiting, layout, sharedTransitionTag, animatedProps, ...rest } =
@@ -546,8 +670,14 @@ function animated<P extends Record<string, unknown>>(Base: React.ComponentType<P
     void exiting
     void layout
     void sharedTransitionTag
-    void animatedProps
-    return <Base {...(rest as P)} />
+
+    const extra = { ...((animatedProps as Record<string, unknown>) ?? {}) }
+    if ('text' in extra) {
+      extra.value = extra.text
+      delete extra.text
+    }
+
+    return <Base {...(rest as P)} {...(extra as P)} />
   }
 }
 
