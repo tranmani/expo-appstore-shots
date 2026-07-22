@@ -49,6 +49,28 @@ export const DEVICES = {
     renderWith: 'iphone-6.9',
     kind: 'phone',
   },
+  /**
+   * Google Play phone. 1080×2160 is 2:1 — the tallest Play accepts (it rejects
+   * anything over 2:1), and a sensible modern height. Rendered at its OWN
+   * viewport (360×720 @3), not resized from the iPhone, so the app lays out for
+   * an Android-shaped screen rather than an iPhone one stretched into a taller box.
+   *
+   * CAVEAT worth stating: the bundle is shared, and it is built with
+   * `Platform.OS === 'ios'`, so an app that branches its *layout* on the platform
+   * renders its iOS branch here. For the many RN apps whose two layouts are the
+   * same JS, this is the real screen at the real Android size; for the few that
+   * differ, a per-platform bundle is future work.
+   */
+  'android-phone': {
+    label: 'Android phone',
+    out: 'android-phone',
+    width: 360,
+    height: 720,
+    scale: 3,
+    insets: { top: 28, bottom: 24 },
+    size: [1080, 2160],
+    kind: 'android',
+  },
   'ipad-13': {
     label: 'iPad 13"',
     out: 'ipad-13',

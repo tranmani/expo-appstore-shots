@@ -17,6 +17,7 @@ import { frameHtml } from '../src/compose.mjs'
 import { layoutPlan, LAYOUTS } from '../src/layouts.mjs'
 import { resolveGrounds, renderHeadline, THEMES, DEFAULT_GROUNDS } from '../src/theme.mjs'
 import { normalise, ConfigError } from '../src/config.mjs'
+import { DEVICES } from '../src/devices.mjs'
 
 const DEVICE = { size: [1290, 2796], width: 430, height: 932, scale: 3, insets: { top: 62, bottom: 34 }, kind: 'phone' }
 const raw = Buffer.from('x')
@@ -113,6 +114,22 @@ test('two-devices layers a back + front phone, and needs a second screenshot', (
     fontCss: '',
   })
   assert.match(fallback, /class="device"/, 'a two-devices slide with no secondary should still show one phone')
+})
+
+test('android is a Play-safe size, rendered natively, with a gesture pill', () => {
+  // 1080×2160 is exactly 2:1 — the tallest Play accepts. And no renderWith: the
+  // app lays out for an Android-shaped viewport, not an iPhone one stretched.
+  assert.deepEqual(DEVICES['android-phone'].size, [1080, 2160])
+  assert.equal(DEVICES['android-phone'].renderWith, undefined, 'android must render at its own viewport')
+  assert.ok(2160 / 1080 <= 2, 'aspect ratio must not exceed Play’s 2:1 limit')
+
+  const android = { size: [1080, 2160], width: 360, height: 720, scale: 3, insets: { top: 28, bottom: 24 }, kind: 'android' }
+  const out = frameHtml({ slide: { screen: 'x', headline: 'A' }, device: android, raw, frame: {}, fontCss: '' })
+  assert.match(out, /class="nav"/, 'android must draw the gesture pill')
+  assert.match(out, /\.nav \{/, 'android must define the pill CSS')
+  // The iOS phone frame has neither — which is what keeps the golden clean.
+  const ios = html({ screen: 'x', headline: 'A' })
+  assert.ok(!ios.includes('class="nav"') && !ios.includes('.nav {'), 'the iOS phone frame must carry no android chrome')
 })
 
 test('a bottom-anchored caption with no captionBottom never emits undefinedpx', () => {

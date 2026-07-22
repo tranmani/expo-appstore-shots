@@ -114,6 +114,22 @@ export function frameHtml({ slide, device, raw, rawSecondary, frame, fontCss }) 
 
   const deviceTransform = `translateX(-50%)${tilt ? ` rotate(${tilt}deg)` : ''}`
 
+  // Android draws a gesture pill where iOS shows the home indicator — the
+  // clearest tell that a frame is an Android one. Only for the android kind, so
+  // the iOS phone path (the golden) is untouched.
+  const navPill =
+    device.kind === 'android'
+      ? `
+    <div class="nav"></div>`
+      : ''
+  // The pill's CSS, added to the style block only for android — so the iOS phone
+  // output (the golden) gains nothing and stays byte-identical.
+  const navCss =
+    device.kind === 'android'
+      ? `
+  .nav { position: absolute; left: 50%; bottom: ${Math.round(device.insets.bottom * shrink * device.scale * 0.3)}px; transform: translateX(-50%); width: ${Math.round(L.deviceWidth * 0.3)}px; height: ${Math.max(6, Math.round(4 * statusScale))}px; border-radius: 999px; background: rgba(20, 20, 20, 0.5); }`
+      : ''
+
   // Two phones layered — the back one first (behind), then the front. Falls back
   // to the single centred device the moment the second screenshot is missing, so
   // a `two-devices` slide with no `screenSecondary` still renders one real phone
@@ -130,7 +146,7 @@ export function frameHtml({ slide, device, raw, rawSecondary, frame, fontCss }) 
     <div class="sb">
       <span>${escapeHtml(frame.statusBar?.time ?? '9:41')}</span>
       ${statusBarSvg(statusTint, statusScale)}
-    </div>
+    </div>${navPill}
   </div>
 </div>`
       : ''
@@ -176,7 +192,7 @@ ${fontCss}
     padding-top: ${Math.round(6 * statusScale)}px;
     font-size: ${Math.round(17 * statusScale)}px; font-weight: 600; color: ${statusTint};
     letter-spacing: 0.01em;
-  }
+  }${navCss}
 </style>
 <div class="caption">
   <h1>${renderHeadline(slide.headline ?? '', ground.accent)}</h1>
