@@ -13,7 +13,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
+import { PNG } from 'pngjs'
 import { frameHtml, elementsHtml, bridgeContexts, applyVariant } from '../src/compose.mjs'
+import { thumbnailLegibility, THUMBNAIL_MIN } from '../src/verify.mjs'
 import { layoutPlan, LAYOUTS, isTablet, isAndroid } from '../src/layouts.mjs'
 import { resolveGrounds, renderHeadline, contrastRatio, THEMES, DEFAULT_GROUNDS } from '../src/theme.mjs'
 import { normalise, ConfigError } from '../src/config.mjs'
@@ -298,6 +300,45 @@ test('variants are validated — named, unique, real theme', () => {
   )
   const ok = normalise({ ...baseConfig, variants: [{ name: 'warm', frame: { theme: 'warm-editorial' } }] }, CONFIG)
   assert.equal(ok.variants.length, 1)
+})
+
+/* -------------------------------------------------- thumbnail legibility --- */
+
+// A synthetic frame: a white ground with a striped caption band. `strokeAt`
+// controls the ink of the stripes — black is a legible headline, near-white is
+// one that washes out. Stripes (not a solid fill) so the median stays ground and
+// the percentile catches the strokes, exactly as real antialiased type behaves.
+function striped({ height = 1000, width = 160, band = [0.045, 0.19], stroke = 0 }) {
+  const png = new PNG({ width, height })
+  const y0 = Math.floor(band[0] * height)
+  const y1 = Math.ceil(band[1] * height)
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4
+      const inBand = y >= y0 && y < y1
+      const v = inBand && x % 2 === 0 ? stroke : 255
+      png.data[i] = png.data[i + 1] = png.data[i + 2] = v
+      png.data[i + 3] = 255
+    }
+  }
+  return png
+}
+
+test('thumbnail gate: a black headline over white reads at 160px', () => {
+  const ratio = thumbnailLegibility(striped({ stroke: 0 }), 'top')
+  assert.ok(ratio >= THUMBNAIL_MIN, `black-on-white should pass, got ${ratio.toFixed(2)}`)
+})
+
+test('thumbnail gate: a near-tone headline washes out and fails', () => {
+  const ratio = thumbnailLegibility(striped({ stroke: 238 }), 'top') // #EE grey on white
+  assert.ok(ratio < THUMBNAIL_MIN, `near-tone should fail, got ${ratio.toFixed(2)}`)
+})
+
+test('thumbnail gate measures the band the caption is anchored in', () => {
+  // Ink lives only in the TOP band. Measuring the bottom band sees pure ground.
+  const png = striped({ stroke: 0, band: [0.045, 0.19] })
+  assert.ok(thumbnailLegibility(png, 'top') >= THUMBNAIL_MIN, 'top anchor finds the ink')
+  assert.ok(thumbnailLegibility(png, 'bottom') < THUMBNAIL_MIN, 'bottom anchor sees empty ground')
 })
 
 /* ------------------------------------------------------------- config gate --- */

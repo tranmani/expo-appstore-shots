@@ -216,6 +216,93 @@ export function flatness(png, ignoreBottom = 0) {
   return { rows, height: canvas, share: rows / canvas, colour: ground.join(',') }
 }
 
+/**
+ * The thumbnail test, run on pixels instead of by eye.
+ *
+ * A store listing is scrolled as a strip of ~160px-wide thumbnails; the headline
+ * has to carry from there or the slide is wasted. A caption can clear a config-
+ * time contrast check (accent vs ground, done in `config.mjs`) and still vanish
+ * at thumbnail size, because downscaling averages a thin stroke *toward* the
+ * ground — 3:1 type over a busy screenshot or a near-tone ground washes out to
+ * nothing once the letters are two pixels wide. The only honest way to know is to
+ * actually shrink the frame and look at the caption band that remains.
+ *
+ * So: box-average the caption band down to a 160px-wide thumbnail, and in each
+ * surviving row measure the WCAG contrast between the row's ground (its median
+ * luminance) and its strongest surviving stroke (the luminance percentile
+ * furthest from that median — a percentile, not the single extreme pixel, so one
+ * stray antialiased dot is not mistaken for legible text). The loudest row is the
+ * headline; its contrast *after* the downscale is the number that predicts
+ * whether a scroller can read it. Anti-aliasing has already done its damage by
+ * then, which is the point.
+ *
+ * `anchor` says where the caption sits (`top` | `bottom` | `middle`) so the app's
+ * own screen text is never what gets measured.
+ */
+const luminance = (r, g, b) => {
+  const lin = (c) => {
+    const s = c / 255
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+}
+const wcag = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+
+const CAPTION_BAND = {
+  top: [0.045, 0.19],
+  bottom: [0.8, 0.955],
+  middle: [0.4, 0.62],
+}
+
+export function thumbnailLegibility(png, anchor = 'top', thumbWidth = 160) {
+  const { width, height, data } = png
+  const band = CAPTION_BAND[anchor] ?? CAPTION_BAND.top
+  const y0 = Math.floor(band[0] * height)
+  const y1 = Math.ceil(band[1] * height)
+
+  // Box-average full-res blocks down to `thumbWidth` columns. The block is the
+  // downscale kernel; averaging is what pulls a thin stroke toward the ground.
+  const scale = Math.max(1, Math.round(width / thumbWidth))
+  const cols = Math.floor(width / scale)
+
+  let best = 0
+  for (let y = y0; y + scale <= y1; y += scale) {
+    const lums = []
+    for (let cx = 0; cx < cols; cx++) {
+      let r = 0
+      let g = 0
+      let b = 0
+      let n = 0
+      for (let dy = 0; dy < scale; dy++) {
+        for (let dx = 0; dx < scale; dx++) {
+          const i = ((y + dy) * width + (cx * scale + dx)) * 4
+          r += data[i]
+          g += data[i + 1]
+          b += data[i + 2]
+          n++
+        }
+      }
+      lums.push(luminance(r / n, g / n, b / n))
+    }
+    if (lums.length < 8) continue
+    lums.sort((a, c) => a - c)
+    const at = (p) => lums[Math.min(lums.length - 1, Math.max(0, Math.round(p * (lums.length - 1))))]
+    const ground = at(0.5)
+    // The strongest stroke is whichever tail is furthest from the ground.
+    const dark = wcag(at(0.08), ground)
+    const light = wcag(at(0.92), ground)
+    best = Math.max(best, dark, light)
+  }
+  return best
+}
+
+/**
+ * Below this WCAG contrast, a headline that survived the full-size check still
+ * dies at thumbnail scale. Calibrated so real Perron/FamMedley heroes clear it
+ * comfortably and a deliberately near-tone caption does not.
+ */
+export const THUMBNAIL_MIN = 2.2
+
 /** Anything above this is dead space you would notice, and reviewers will. */
 const DEAD_SHARE = 0.3
 

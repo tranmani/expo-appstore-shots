@@ -12,6 +12,7 @@ import { PNG } from 'pngjs'
 import { slideFile } from './config.mjs'
 import { resolveGrounds, renderHeadline, escapeHtml } from './theme.mjs'
 import { layoutPlan, isAndroid, isTablet } from './layouts.mjs'
+import { thumbnailLegibility, THUMBNAIL_MIN } from './verify.mjs'
 
 /**
  * App Store Connect rejects PNGs with an alpha channel, and Chromium always
@@ -319,6 +320,7 @@ export async function compose({ browser, config, devices, fontCss, rawDir, outDi
   const bridges = config.bridges ?? {}
   const groups = bridgeContexts(config.slides)
   const written = []
+  const legibility = []
 
   for (const device of devices) {
     const dir = resolve(outDir, device.out)
@@ -345,9 +347,23 @@ export async function compose({ browser, config, devices, fontCss, rawDir, outDi
 
       const name = slideFile(slide, i)
       const file = resolve(dir, name)
-      await writeFile(file, stripAlpha(shot))
+      const png = stripAlpha(shot)
+      await writeFile(file, png)
       written.push(`${device.out}/${name}`)
+
+      // The thumbnail test, run on the frame we just wrote: a headline that
+      // clears the config-time contrast check can still die once the listing
+      // shrinks it to ~160px. Only captioned slides carry a headline to read.
+      if (slide.headline) {
+        const anchor = layoutPlan(slide.layout ?? 'standard', device).captionAnchor
+        const ratio = thumbnailLegibility(PNG.sync.read(png), anchor)
+        if (ratio < THUMBNAIL_MIN) legibility.push({ file: `${device.out}/${name}`, ratio })
+      }
     }
+  }
+  if (legibility.length) {
+    console.warn(`\n⚠ thumbnail legibility — the headline may not read at ~160px (min ${THUMBNAIL_MIN}:1):`)
+    for (const w of legibility) console.warn(`  ${w.file} — ${w.ratio.toFixed(2)}:1`)
   }
   return written
 }
