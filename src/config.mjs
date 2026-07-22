@@ -113,6 +113,21 @@ export function normalise(config, configPath) {
         `slide "${slide.screen}" has unknown layout "${slide.layout}" (have: ${LAYOUTS.join(', ')})`,
       )
     }
+    // The back phone of a two-devices slide must be one of the deck's own
+    // screens, so its raw exists to compose.
+    if (slide.screenSecondary && !ids.has(slide.screenSecondary)) {
+      throw new ConfigError(
+        `slide "${slide.screen}" has screenSecondary "${slide.screenSecondary}", which is not a declared screen`,
+      )
+    }
+    // `two-devices` needs a second screen; without one it quietly renders a
+    // single phone, which is not what the layout was chosen for.
+    if (slide.layout === 'two-devices' && !slide.screenSecondary) {
+      out.warnings.push(
+        `slide "${slide.screen}" uses the two-devices layout but sets no screenSecondary — ` +
+          `it will render one phone. Add screenSecondary: "<another screen id>".`,
+      )
+    }
     // Their rule, and ours: never the same composition twice in a row. Only
     // *explicit* repeats are warned — a deck that never set a layout has not
     // opted into this and should not be nagged; two slides that both chose

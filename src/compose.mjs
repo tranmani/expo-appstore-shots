@@ -50,7 +50,33 @@ function statusBarSvg(tint, scale) {
     </svg>`
 }
 
-export function frameHtml({ slide, device, raw, frame, fontCss }) {
+/**
+ * One device, positioned absolutely by its top-left — for `two-devices`, where
+ * two phones overlap and neither is centred. Fully inline-styled on purpose: it
+ * shares no CSS class with the single-device path, so that path stays
+ * byte-identical while this one is free to place, scale and tilt each phone.
+ * Corners, bezel and the status bar all scale from this device's own width.
+ */
+function positionedDevice(raw, { left, top, width, tilt, z, device, frame, statusTint }) {
+  const tablet = device.kind === 'tablet'
+  const bezel = Math.round(width * 0.013)
+  const radius = Math.round(width * (tablet ? 0.028 : 0.057))
+  const shrink = width / (device.width * device.scale)
+  const statusScale = device.scale * shrink
+  const sbH = Math.round(device.insets.top * shrink * device.scale)
+  const transform = tilt ? `rotate(${tilt}deg)` : 'none'
+  return `<div style="position:absolute; top:${top}px; left:${left}px; z-index:${z}; width:${width + bezel * 2}px; padding:${bezel}px; border-radius:${radius + bezel}px; background:${frame.bezel ?? '#111517'}; transform:${transform}; transform-origin:center; box-shadow:0 ${Math.round(width / 34)}px ${Math.round(width / 12)}px rgba(0,0,0,0.30);">
+  <div style="position:relative; border-radius:${radius}px; overflow:hidden; display:block;">
+    <img src="data:image/png;base64,${raw.toString('base64')}" style="width:${width}px; display:block;">
+    <div style="position:absolute; left:0; right:0; top:0; height:${sbH}px; display:flex; align-items:center; justify-content:space-between; padding:0 ${Math.round(20 * statusScale)}px; padding-top:${Math.round(6 * statusScale)}px; font-size:${Math.round(17 * statusScale)}px; font-weight:600; color:${statusTint}; letter-spacing:0.01em;">
+      <span>${escapeHtml(frame.statusBar?.time ?? '9:41')}</span>
+      ${statusBarSvg(statusTint, statusScale)}
+    </div>
+  </div>
+</div>`
+}
+
+export function frameHtml({ slide, device, raw, rawSecondary, frame, fontCss }) {
   const [W, H] = device.size
   const ground = resolveGrounds(frame)[slide.ground ?? 'light']
 
@@ -88,8 +114,17 @@ export function frameHtml({ slide, device, raw, frame, fontCss }) {
 
   const deviceTransform = `translateX(-50%)${tilt ? ` rotate(${tilt}deg)` : ''}`
 
-  const deviceHtml = L.deviceShown
-    ? `<div class="device">
+  // Two phones layered — the back one first (behind), then the front. Falls back
+  // to the single centred device the moment the second screenshot is missing, so
+  // a `two-devices` slide with no `screenSecondary` still renders one real phone
+  // rather than nothing (the config also warns about it).
+  const twoDevices = L.secondary && rawSecondary
+  const deviceHtml = twoDevices
+    ? positionedDevice(rawSecondary, { ...L.secondary, z: 1, device, frame, statusTint }) +
+      '\n' +
+      positionedDevice(raw, { left: L.deviceLeft, top: L.deviceTop, width: L.deviceWidth, tilt, z: 2, device, frame, statusTint })
+    : L.deviceShown
+      ? `<div class="device">
   <div class="screen">
     <img src="data:image/png;base64,${raw.toString('base64')}">
     <div class="sb">
@@ -98,7 +133,7 @@ export function frameHtml({ slide, device, raw, frame, fontCss }) {
     </div>
   </div>
 </div>`
-    : ''
+      : ''
 
   return `<!doctype html>
 <meta charset="utf-8">
@@ -162,8 +197,13 @@ export async function compose({ browser, config, devices, fontCss, rawDir, outDi
 
     for (const [i, slide] of config.slides.entries()) {
       const raw = await readFile(resolve(rawDir, `${source}-${slide.screen}.png`))
+      // The back phone of a two-devices slide. It is one of the deck's own
+      // screens, so it was already shot — this just reads that raw too.
+      const rawSecondary = slide.screenSecondary
+        ? await readFile(resolve(rawDir, `${source}-${slide.screenSecondary}.png`))
+        : null
       const page = await browser.newPage({ viewport: { width: device.size[0], height: device.size[1] } })
-      await page.setContent(frameHtml({ slide, device, raw, frame, fontCss }))
+      await page.setContent(frameHtml({ slide, device, raw, rawSecondary, frame, fontCss }))
       await page.evaluate(() => document.fonts.ready)
 
       const shot = await page.screenshot({ type: 'png' })

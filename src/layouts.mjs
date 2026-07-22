@@ -13,7 +13,7 @@
  * touches HTML, so a new one is a few numbers, not a new template.
  */
 
-export const LAYOUTS = ['standard', 'hero', 'device-top', 'device-bottom', 'no-device']
+export const LAYOUTS = ['standard', 'hero', 'device-top', 'device-bottom', 'no-device', 'two-devices']
 
 /** The proportional anchors the `standard` layout has always used. */
 function base(device) {
@@ -84,6 +84,29 @@ export function layoutPlan(name, device) {
         deviceTop: Math.round(H * (tablet ? 0.3 : 0.31)),
         deviceWidth: Math.round(b.deviceWidth * 0.94),
       }
+
+    // Two phones layered — a front screen and a second behind it, tilted the
+    // other way. The slide names the second with `screenSecondary`. Both anchor
+    // by their top-left (not centred), because they overlap on purpose.
+    case 'two-devices': {
+      const width = Math.round(b.deviceWidth * 0.72)
+      return {
+        ...common,
+        headline: Math.round(b.headline * 0.92),
+        deviceWidth: width,
+        deviceTop: Math.round(H * (tablet ? 0.34 : 0.33)),
+        deviceLeft: Math.round(W * 0.4), // front, right of centre
+        tilt: 4,
+        // The back phone: a touch smaller, shifted up and left, tilted away,
+        // behind. `screenSecondary` supplies its screenshot.
+        secondary: {
+          width: Math.round(width * 0.94),
+          top: Math.round(H * (tablet ? 0.29 : 0.27)),
+          left: Math.round(W * 0.05),
+          tilt: -7,
+        },
+      }
+    }
 
     // No device at all: a big statement, centred, for the one slide that is the
     // idea and not the screen. Use sparingly — their rule, and ours.

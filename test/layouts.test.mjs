@@ -75,6 +75,46 @@ test('no-device drops the device; device-top moves the caption to the bottom', (
   assert.ok(!/\.caption \{[^}]*top: \d+px;/.test(deviceTop), 'device-top must not also pin the caption to the top')
 })
 
+test('two-devices layers a back + front phone, and needs a second screenshot', () => {
+  const plan = layoutPlan('two-devices', DEVICE)
+  assert.ok(plan.secondary, 'two-devices must define a secondary placement')
+  assert.ok(plan.secondary.width < plan.deviceWidth, 'the back phone should be smaller')
+
+  const rawBack = Buffer.from('BACK')
+  const rawFront = Buffer.from('FRONT')
+  const out = frameHtml({
+    slide: { screen: 'front', screenSecondary: 'back', headline: 'Two', layout: 'two-devices' },
+    device: DEVICE,
+    raw: rawFront,
+    rawSecondary: rawBack,
+    frame: {},
+    fontCss: '',
+  })
+  // Two phones, both present, and NOT the single centred `.device` block.
+  assert.match(out, new RegExp(rawBack.toString('base64')))
+  assert.match(out, new RegExp(rawFront.toString('base64')))
+  assert.ok(!out.includes('class="device"'), 'two-devices must not use the single-device block')
+  assert.match(out, /z-index:1;/) // back
+  assert.match(out, /z-index:2;/) // front
+  // The back phone is drawn FIRST (earlier in the DOM and lower z), so the front
+  // paints over it. If this order flips, the wrong screen is on top.
+  assert.ok(
+    out.indexOf(rawBack.toString('base64')) < out.indexOf(rawFront.toString('base64')),
+    'the back phone must be composed before the front',
+  )
+
+  // Missing the second screenshot: falls back to a single phone rather than nothing.
+  const fallback = frameHtml({
+    slide: { screen: 'front', headline: 'Two', layout: 'two-devices' },
+    device: DEVICE,
+    raw: rawFront,
+    rawSecondary: null,
+    frame: {},
+    fontCss: '',
+  })
+  assert.match(fallback, /class="device"/, 'a two-devices slide with no secondary should still show one phone')
+})
+
 test('a bottom-anchored caption with no captionBottom never emits undefinedpx', () => {
   // Only reachable via a frame.layout override that sets the anchor without the
   // value — an adversarial-review find. It must fall to a real default, not
@@ -155,6 +195,15 @@ test('an unknown theme or layout fails at config time, with the list', () => {
     () => normalise({ ...baseConfig, slides: [{ screen: 'a', layout: 'nope' }] }, CONFIG),
     /unknown layout/,
   )
+})
+
+test('screenSecondary must be a real screen; two-devices without one warns', () => {
+  assert.throws(
+    () => normalise({ ...baseConfig, slides: [{ screen: 'a', screenSecondary: 'ghost' }] }, CONFIG),
+    /not a declared screen/,
+  )
+  const warned = normalise({ ...baseConfig, slides: [{ screen: 'a', layout: 'two-devices' }] }, CONFIG)
+  assert.equal(warned.warnings.filter((w) => /no screenSecondary/.test(w)).length, 1)
 })
 
 test('adjacent EXPLICIT layout repeats warn; a legacy all-default deck does not', () => {
