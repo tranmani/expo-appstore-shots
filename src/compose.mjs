@@ -76,6 +76,53 @@ function positionedDevice(raw, { left, top, width, tilt, z, device, frame, statu
 </div>`
 }
 
+/** The built-in accent marks — a sparkle and a hand-drawn squiggle — so a deck
+ *  gets tasteful decoration with no assets, drawn in the ground's accent. */
+function accentSvg(kind, color, size) {
+  if (kind === 'sparkle') {
+    return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none"><path d="M12 0 L14 10 L24 12 L14 14 L12 24 L10 14 L0 12 L10 10 Z" fill="${color}"/></svg>`
+  }
+  // squiggle: a wavy underline
+  return `<svg width="${size}" height="${Math.round(size * 0.26)}" viewBox="0 0 100 24" fill="none"><path d="M2 12 Q 14 2 26 12 T 50 12 T 74 12 T 98 12" stroke="${color}" stroke-width="4" stroke-linecap="round" fill="none"/></svg>`
+}
+
+/**
+ * Decorative accents, composited over the ground: a stat chip, a proof badge, a
+ * sparkle, a squiggle, a line of text, an image. Positioned by `{x, y}` as
+ * FRACTIONS of the frame (0–1) so a placement holds across every device size,
+ * with optional `rotation` and stacking `z`. Sparsity is the rule — one or two
+ * of these on a hero, not a scrapbook — but that is the deck's call, not ours.
+ *
+ * Entirely opt-in: an empty/absent list renders nothing, which is what keeps the
+ * default frame byte-identical.
+ */
+export function elementsHtml(elements, { W, H, ground }) {
+  if (!elements?.length) return ''
+  const px = (frac) => Math.round(frac * W)
+  return elements
+    .map((el) => {
+      const left = Math.round((el.x ?? 0.5) * W)
+      const top = Math.round((el.y ?? 0.5) * H)
+      const rot = el.rotation ? ` rotate(${el.rotation}deg)` : ''
+      const base = `position:absolute; left:${left}px; top:${top}px; z-index:${el.z ?? 5}; transform:translate(-50%,-50%)${rot}; transform-origin:center;`
+      switch (el.type) {
+        case 'chip':
+        case 'badge':
+          return `<div style="${base} background:${el.color ?? ground.accent}; color:${el.textColor ?? '#fff'}; padding:${px(0.017)}px ${px(0.032)}px; border-radius:999px; font-size:${px(el.size ?? 0.03)}px; font-weight:700; white-space:nowrap; box-shadow:0 ${px(0.006)}px ${px(0.022)}px rgba(0,0,0,0.16);">${escapeHtml(el.text ?? '')}</div>`
+        case 'text':
+          return `<div style="${base} color:${el.color ?? ground.ink}; font-size:${px(el.size ?? 0.035)}px; font-weight:${el.weight ?? 700}; white-space:nowrap; letter-spacing:-0.01em;">${escapeHtml(el.text ?? '')}</div>`
+        case 'sparkle':
+        case 'squiggle':
+          return `<div style="${base}">${accentSvg(el.type, el.color ?? ground.accent, px(el.size ?? 0.08))}</div>`
+        case 'image':
+          return `<img src="${el.src}" style="${base} width:${px(el.w ?? 0.2)}px; display:block;">`
+        default:
+          return ''
+      }
+    })
+    .join('\n')
+}
+
 export function frameHtml({ slide, device, raw, rawSecondary, frame, fontCss }) {
   const [W, H] = device.size
   const ground = resolveGrounds(frame)[slide.ground ?? 'light']
@@ -129,6 +176,16 @@ export function frameHtml({ slide, device, raw, rawSecondary, frame, fontCss }) 
       ? `
   .nav { position: absolute; left: 50%; bottom: ${Math.round(device.insets.bottom * shrink * device.scale * 0.3)}px; transform: translateX(-50%); width: ${Math.round(L.deviceWidth * 0.3)}px; height: ${Math.max(6, Math.round(4 * statusScale))}px; border-radius: 999px; background: rgba(20, 20, 20, 0.5); }`
       : ''
+
+  // A small over-line above the headline (proof, category, "NEW") and the free
+  // decorative accents — both opt-in, so an eyebrow-less, element-less slide is
+  // byte-for-byte what it was before they existed.
+  const eyebrow = slide.eyebrow ? `\n  <div class="eyebrow">${escapeHtml(slide.eyebrow)}</div>` : ''
+  const eyebrowCss = slide.eyebrow
+    ? `
+  .eyebrow { font-size: ${Math.round(L.sub * 0.82)}px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: ${ground.accent}; margin-bottom: ${Math.round(L.headline * 0.2)}px; }`
+    : ''
+  const elements = slide.elements?.length ? `\n${elementsHtml(slide.elements, { W, H, ground })}` : ''
 
   // Two phones layered — the back one first (behind), then the front. Falls back
   // to the single centred device the moment the second screenshot is missing, so
@@ -192,13 +249,13 @@ ${fontCss}
     padding-top: ${Math.round(6 * statusScale)}px;
     font-size: ${Math.round(17 * statusScale)}px; font-weight: 600; color: ${statusTint};
     letter-spacing: 0.01em;
-  }${navCss}
+  }${navCss}${eyebrowCss}
 </style>
-<div class="caption">
+<div class="caption">${eyebrow}
   <h1>${renderHeadline(slide.headline ?? '', ground.accent)}</h1>
   ${slide.sub ? `<p>${escapeHtml(slide.sub)}</p>` : ''}
 </div>
-${deviceHtml}
+${deviceHtml}${elements}
 `
 }
 

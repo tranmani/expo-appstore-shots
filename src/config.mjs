@@ -13,6 +13,9 @@ import { DEVICES } from './devices.mjs'
 
 export class ConfigError extends Error {}
 
+/** The decorative element types compose.mjs knows how to draw. */
+export const ELEMENT_TYPES = ['chip', 'badge', 'text', 'sparkle', 'squiggle', 'image']
+
 const here = dirname(fileURLToPath(import.meta.url))
 
 /** The root layout for an app that has none — a React Navigation app. See stubs/root-layout.tsx. */
@@ -137,6 +140,16 @@ export function normalise(config, configPath) {
         `slide "${slide.screen}" has screenSecondary "${slide.screenSecondary}", which is not a declared screen`,
       )
     }
+    // Decorative elements: a mistyped `type` draws nothing, silently, so it is
+    // caught here with the list of the ones that do draw.
+    for (const el of slide.elements ?? []) {
+      if (!ELEMENT_TYPES.includes(el?.type)) {
+        throw new ConfigError(
+          `slide "${slide.screen}" has an element of unknown type "${el?.type}" (have: ${ELEMENT_TYPES.join(', ')})`,
+        )
+      }
+    }
+
     // `two-devices` needs a second screen; without one it quietly renders a
     // single phone, which is not what the layout was chosen for.
     if (slide.layout === 'two-devices' && !slide.screenSecondary) {

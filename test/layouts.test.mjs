@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { frameHtml } from '../src/compose.mjs'
+import { frameHtml, elementsHtml } from '../src/compose.mjs'
 import { layoutPlan, LAYOUTS, isTablet, isAndroid } from '../src/layouts.mjs'
 import { resolveGrounds, renderHeadline, THEMES, DEFAULT_GROUNDS } from '../src/theme.mjs'
 import { normalise, ConfigError } from '../src/config.mjs'
@@ -218,6 +218,37 @@ test('every theme accent is legible on its own ground (WCAG large-text 3:1)', ()
   }
 })
 
+test('elements composite over the ground — chip, accents, text, image', () => {
+  const g = { bg: '#fff', dot: '#eee', ink: '#111', muted: '#666', accent: '#0a7' }
+  const els = elementsHtml(
+    [
+      { type: 'chip', text: '4.9 ★', x: 0.5, y: 0.1 },
+      { type: 'sparkle', x: 0.2, y: 0.2 },
+      { type: 'squiggle', x: 0.5, y: 0.3, color: '#f00' },
+      { type: 'text', text: 'Hi', x: 0.8, y: 0.4, rotation: -6 },
+      { type: 'image', src: 'data:image/png;base64,AAAA', x: 0.5, y: 0.5, w: 0.3 },
+    ],
+    { W: 1290, H: 2796, ground: g },
+  )
+  assert.match(els, /4\.9 ★/)
+  assert.match(els, new RegExp(`background:${g.accent}`), 'a chip defaults to the accent')
+  assert.match(els, /<svg[^>]*><path d="M12 0/, 'the built-in sparkle')
+  assert.match(els, /stroke="#f00"/, 'a squiggle honours an explicit colour')
+  assert.match(els, /rotate\(-6deg\)/, 'rotation applies')
+  assert.match(els, /data:image\/png;base64,AAAA/, 'an image element')
+  // Positions are fractions of the frame — a chip at y:0.1 sits near the top.
+  assert.match(els, /top:280px;/) // round(0.1 * 2796) = 280
+  assert.equal(elementsHtml([], { W: 1290, H: 2796, ground: g }), '', 'no elements → nothing')
+})
+
+test('an eyebrow rides above the headline, in the accent, opt-in', () => {
+  const out = html({ screen: 'x', headline: 'Big', eyebrow: 'new in 2.0', ground: 'light' })
+  assert.match(out, /class="eyebrow">new in 2\.0</)
+  assert.match(out, /\.eyebrow \{[^}]*text-transform: uppercase/)
+  // A slide with no eyebrow emits neither the div nor the rule (byte-identity).
+  assert.ok(!html({ screen: 'x', headline: 'Big' }).includes('eyebrow'))
+})
+
 /* ------------------------------------------------------------- config gate --- */
 
 const CONFIG = '/app/shots.config.mjs'
@@ -231,6 +262,13 @@ test('an unknown theme or layout fails at config time, with the list', () => {
   assert.throws(
     () => normalise({ ...baseConfig, slides: [{ screen: 'a', layout: 'nope' }] }, CONFIG),
     /unknown layout/,
+  )
+})
+
+test('an element of unknown type fails at config time', () => {
+  assert.throws(
+    () => normalise({ ...baseConfig, slides: [{ screen: 'a', elements: [{ type: 'nope' }] }] }, CONFIG),
+    /unknown type/,
   )
 })
 
