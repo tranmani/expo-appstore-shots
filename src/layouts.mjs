@@ -15,10 +15,15 @@
 
 export const LAYOUTS = ['standard', 'hero', 'device-top', 'device-bottom', 'no-device', 'two-devices']
 
+/** A tablet-shaped device — iPad or Android tablet — gets the roomier proportions. */
+export const isTablet = (device) => /tablet/.test(device.kind)
+/** An Android device — phone or tablet — gets Android chrome (the gesture pill). */
+export const isAndroid = (device) => /^android/.test(device.kind)
+
 /** The proportional anchors the `standard` layout has always used. */
 function base(device) {
   const [W, H] = device.size
-  const tablet = device.kind === 'tablet'
+  const tablet = isTablet(device)
   return {
     W,
     H,

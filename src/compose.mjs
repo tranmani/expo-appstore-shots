@@ -11,7 +11,7 @@ import { resolve } from 'node:path'
 import { PNG } from 'pngjs'
 import { slideFile } from './config.mjs'
 import { resolveGrounds, renderHeadline, escapeHtml } from './theme.mjs'
-import { layoutPlan } from './layouts.mjs'
+import { layoutPlan, isAndroid, isTablet } from './layouts.mjs'
 
 /**
  * App Store Connect rejects PNGs with an alpha channel, and Chromium always
@@ -58,7 +58,7 @@ function statusBarSvg(tint, scale) {
  * Corners, bezel and the status bar all scale from this device's own width.
  */
 function positionedDevice(raw, { left, top, width, tilt, z, device, frame, statusTint }) {
-  const tablet = device.kind === 'tablet'
+  const tablet = isTablet(device)
   const bezel = Math.round(width * 0.013)
   const radius = Math.round(width * (tablet ? 0.028 : 0.057))
   const shrink = width / (device.width * device.scale)
@@ -118,14 +118,14 @@ export function frameHtml({ slide, device, raw, rawSecondary, frame, fontCss }) 
   // clearest tell that a frame is an Android one. Only for the android kind, so
   // the iOS phone path (the golden) is untouched.
   const navPill =
-    device.kind === 'android'
+    isAndroid(device)
       ? `
     <div class="nav"></div>`
       : ''
   // The pill's CSS, added to the style block only for android — so the iOS phone
   // output (the golden) gains nothing and stays byte-identical.
   const navCss =
-    device.kind === 'android'
+    isAndroid(device)
       ? `
   .nav { position: absolute; left: 50%; bottom: ${Math.round(device.insets.bottom * shrink * device.scale * 0.3)}px; transform: translateX(-50%); width: ${Math.round(L.deviceWidth * 0.3)}px; height: ${Math.max(6, Math.round(4 * statusScale))}px; border-radius: 999px; background: rgba(20, 20, 20, 0.5); }`
       : ''

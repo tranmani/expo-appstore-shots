@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { frameHtml } from '../src/compose.mjs'
-import { layoutPlan, LAYOUTS } from '../src/layouts.mjs'
+import { layoutPlan, LAYOUTS, isTablet, isAndroid } from '../src/layouts.mjs'
 import { resolveGrounds, renderHeadline, THEMES, DEFAULT_GROUNDS } from '../src/theme.mjs'
 import { normalise, ConfigError } from '../src/config.mjs'
 import { DEVICES } from '../src/devices.mjs'
@@ -123,13 +123,33 @@ test('android is a Play-safe size, rendered natively, with a gesture pill', () =
   assert.equal(DEVICES['android-phone'].renderWith, undefined, 'android must render at its own viewport')
   assert.ok(2160 / 1080 <= 2, 'aspect ratio must not exceed Play’s 2:1 limit')
 
-  const android = { size: [1080, 2160], width: 360, height: 720, scale: 3, insets: { top: 28, bottom: 24 }, kind: 'android' }
+  const android = { size: [1080, 2160], width: 360, height: 720, scale: 3, insets: { top: 28, bottom: 24 }, kind: 'android-phone' }
   const out = frameHtml({ slide: { screen: 'x', headline: 'A' }, device: android, raw, frame: {}, fontCss: '' })
   assert.match(out, /class="nav"/, 'android must draw the gesture pill')
   assert.match(out, /\.nav \{/, 'android must define the pill CSS')
   // The iOS phone frame has neither — which is what keeps the golden clean.
   const ios = html({ screen: 'x', headline: 'A' })
   assert.ok(!ios.includes('class="nav"') && !ios.includes('.nav {'), 'the iOS phone frame must carry no android chrome')
+})
+
+test('Android tablets round out Play: 7"/10", tablet proportions AND the pill', () => {
+  assert.deepEqual(DEVICES['android-tablet-7'].size, [1200, 1920])
+  assert.deepEqual(DEVICES['android-tablet-10'].size, [1600, 2560])
+  for (const id of ['android-tablet-7', 'android-tablet-10']) {
+    assert.equal(DEVICES[id].renderWith, undefined, `${id} must render natively`)
+    const [w, h] = DEVICES[id].size
+    assert.ok(h / w <= 2, `${id} exceeds Play’s 2:1`)
+  }
+  // The kind carries both facts, read by substring, not exact match.
+  assert.ok(isTablet({ kind: 'android-tablet' }) && isAndroid({ kind: 'android-tablet' }), 'an android tablet is both')
+  assert.ok(isTablet({ kind: 'tablet' }) && !isAndroid({ kind: 'tablet' }), 'an iPad is a tablet, not android')
+  assert.ok(isAndroid({ kind: 'android-phone' }) && !isTablet({ kind: 'android-phone' }), 'an android phone is not a tablet')
+
+  // An android tablet frame draws the pill AND uses the tablet headline size.
+  const tab = { size: [1200, 1920], width: 600, height: 960, scale: 2, insets: { top: 28, bottom: 24 }, kind: 'android-tablet' }
+  const out = frameHtml({ slide: { screen: 'x', headline: 'A' }, device: tab, raw, frame: {}, fontCss: '' })
+  assert.match(out, /class="nav"/, 'an android tablet still draws the pill')
+  assert.match(out, new RegExp(`font-size: ${layoutPlan('standard', tab).headline}px`), 'tablet proportions apply')
 })
 
 test('a bottom-anchored caption with no captionBottom never emits undefinedpx', () => {

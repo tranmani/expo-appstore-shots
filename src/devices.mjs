@@ -69,7 +69,34 @@ export const DEVICES = {
     scale: 3,
     insets: { top: 28, bottom: 24 },
     size: [1080, 2160],
-    kind: 'android',
+    kind: 'android-phone',
+  },
+  /**
+   * Google Play tablets, 7" and 10". Both 1.6:1 (well inside Play's 2:1 limit)
+   * and the sizes their tooling ships, rendered natively at their own viewport.
+   * `kind` carries BOTH facts: `android` (so the gesture pill draws) and `tablet`
+   * (so the layout uses the tablet proportions) — the compositor reads each with
+   * a substring test rather than an exact kind.
+   */
+  'android-tablet-7': {
+    label: 'Android 7" tablet',
+    out: 'android-tablet-7',
+    width: 600,
+    height: 960,
+    scale: 2,
+    insets: { top: 28, bottom: 24 },
+    size: [1200, 1920],
+    kind: 'android-tablet',
+  },
+  'android-tablet-10': {
+    label: 'Android 10" tablet',
+    out: 'android-tablet-10',
+    width: 800,
+    height: 1280,
+    scale: 2,
+    insets: { top: 28, bottom: 24 },
+    size: [1600, 2560],
+    kind: 'android-tablet',
   },
   'ipad-13': {
     label: 'iPad 13"',
