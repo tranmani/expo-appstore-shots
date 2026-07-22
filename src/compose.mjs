@@ -194,7 +194,13 @@ export function frameHtml({ slide, device, raw, rawSecondary, frame, fontCss, br
   // The extras carry their OWN leading space, so when they are empty the caption
   // and paragraph rules are byte-for-byte what they were before the engine — no
   // trailing whitespace on the default path.
-  const textAlign = L.captionAlign === 'center' ? ' text-align: center;' : ''
+  // Right-to-left decks (ar/he/fa/ur). A `frame.direction: 'rtl'` reflows the
+  // caption: the text runs right-to-left and a left-anchored headline becomes
+  // right-aligned, so an Arabic deck reads native rather than mirrored-wrong. LTR
+  // is the default and adds nothing, so the golden path stays byte-identical.
+  const rtl = frame.direction === 'rtl'
+  const dirCss = rtl ? ' direction: rtl;' : ''
+  const textAlign = L.captionAlign === 'center' ? ' text-align: center;' : rtl ? ' text-align: right;' : ''
   const subMargin = L.captionAlign === 'center' ? ' margin-left: auto; margin-right: auto;' : ''
 
   const deviceTransform = `translateX(-50%)${tilt ? ` rotate(${tilt}deg)` : ''}`
@@ -262,7 +268,7 @@ ${fontCss}
     font-family: '${frame.fontFamily ?? 'Inter'}', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  .caption { position: absolute; left: ${L.margin}px; right: ${L.margin}px; ${captionPos}${textAlign} }
+  .caption { position: absolute; left: ${L.margin}px; right: ${L.margin}px; ${captionPos}${textAlign}${dirCss} }
   h1 {
     font-size: ${L.headline}px; line-height: 1.16; letter-spacing: -0.02em;
     font-weight: ${frame.headlineWeight ?? 800}; color: ${ground.ink}; text-wrap: balance;

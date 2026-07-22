@@ -330,6 +330,23 @@ test('config warns when readable content bridges across a seam (the signature ri
   assert.ok(!safe.warnings.some((w) => /across a seam/.test(w)), 'readable content inside one column is fine')
 })
 
+test('an RTL deck reflows the caption; LTR is untouched', () => {
+  const slide = { screen: 'a', headline: 'مرحبا', sub: 'اهلا' }
+  const rtl = frameHtml({ slide, device: DEVICE, raw, frame: { direction: 'rtl' }, fontCss: '' })
+  assert.match(rtl, /direction: rtl;/, 'the caption runs right-to-left')
+  assert.match(rtl, /text-align: right;/, 'a left-anchored headline becomes right-aligned in RTL')
+
+  // LTR is the default and must add NOTHING — the golden path stays byte-identical.
+  const ltr = html({ screen: 'a', headline: 'Hi' })
+  assert.doesNotMatch(ltr, /direction: rtl;/)
+  assert.doesNotMatch(ltr, /text-align: right;/, 'a plain LTR caption has no explicit alignment')
+})
+
+test('frame.direction is validated', () => {
+  assert.throws(() => normalise({ ...baseConfig, frame: { direction: 'rlt' } }, CONFIG), /unknown frame.direction/)
+  assert.equal(normalise({ ...baseConfig, frame: { direction: 'rtl' } }, CONFIG).frame.direction, 'rtl')
+})
+
 test('bridgeContexts groups only ADJACENT slides sharing an id', () => {
   const c = bridgeContexts([{ bridge: 'g' }, { bridge: 'g' }, {}, { bridge: 'x' }, { bridge: 'g' }])
   assert.deepEqual(c[0], { id: 'g', n: 2, i: 0 })

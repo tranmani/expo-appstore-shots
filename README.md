@@ -329,8 +329,14 @@ bridges: { g: { elements: [{ type: 'image', src: glowDataUri, x: 0.5, y: 0.32, w
 ```
 
 `x: 0.5` is the seam of the two-wide group; the object lands at the right edge of
-the first slide and the left edge of the second. Only decorative elements bridge
-— captions and devices stay whole per slide — so a headline is never split.
+the first slide and the left edge of the second. Bridge backgrounds, images and
+accents — not readable copy: the run warns if a `text`/`chip`/`badge` element sits
+on the seam, because each screenshot would then show only half of it.
+
+**Right-to-left** — `frame.direction: 'rtl'` reflows the caption for Arabic,
+Hebrew, Farsi or Urdu decks: the headline runs right-to-left and aligns right, so
+the deck reads native, not mirrored-wrong. `'ltr'` is the default and changes
+nothing.
 
 ## React Navigation
 

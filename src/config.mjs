@@ -120,6 +120,11 @@ export function normalise(config, configPath) {
       `unknown frame.theme "${config.frame.theme}" (have: ${Object.keys(THEMES).join(', ')})`,
     )
   }
+  // Text direction, for right-to-left decks. A typo here (`rlt`) would silently
+  // leave the deck left-to-right, so it fails with the two it accepts.
+  if (config.frame?.direction && !['ltr', 'rtl'].includes(config.frame.direction)) {
+    throw new ConfigError(`unknown frame.direction "${config.frame.direction}" (use "ltr" or "rtl")`)
+  }
 
   // A/B variants: each is a named packaging of the same screens. The name becomes
   // an output folder, so it has to be present and unique; a mistyped theme fails
