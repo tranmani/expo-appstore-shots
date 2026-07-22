@@ -129,9 +129,13 @@ test('android is a Play-safe size, rendered natively, with a gesture pill', () =
   const out = frameHtml({ slide: { screen: 'x', headline: 'A' }, device: android, raw, frame: {}, fontCss: '' })
   assert.match(out, /class="nav"/, 'android must draw the gesture pill')
   assert.match(out, /\.nav \{/, 'android must define the pill CSS')
-  // The iOS phone frame has neither — which is what keeps the golden clean.
+  // The status bar must be the Android one, not Apple chrome on a Play shot: the
+  // Material signal triangle, and no iOS 4-bar signal.
+  assert.match(out, /M2 13 L18 13 L18 1 Z/, 'android draws the Material signal triangle')
+  // The iOS phone frame has neither the pill nor the android bar — golden clean.
   const ios = html({ screen: 'x', headline: 'A' })
   assert.ok(!ios.includes('class="nav"') && !ios.includes('.nav {'), 'the iOS phone frame must carry no android chrome')
+  assert.doesNotMatch(ios, /M2 13 L18 13 L18 1 Z/, 'the iOS frame keeps the Apple status bar, not the Material one')
 })
 
 test('Android tablets round out Play: 7"/10", tablet proportions AND the pill', () => {

@@ -32,7 +32,8 @@ export function stripAlpha(buffer) {
   return PNG.sync.write(out, { colorType: 2, inputColorType: 2 })
 }
 
-function statusBarSvg(tint, scale) {
+function statusBarSvg(tint, scale, android = false) {
+  if (android) return androidStatusBarSvg(tint, scale)
   const s = (n) => n * scale
   return `
     <svg class="sb-icons" width="${s(78)}" height="${s(14)}" viewBox="0 0 78 14" fill="none">
@@ -48,6 +49,26 @@ function statusBarSvg(tint, scale) {
       <rect x="52" y="1.5" width="21" height="11" rx="3" stroke="${tint}" stroke-width="1.2" fill="none" opacity="0.6"/>
       <rect x="53.8" y="3.3" width="17.4" height="7.4" rx="1.6" fill="${tint}"/>
       <path d="M74.6 5.4v3.2a2.2 2.2 0 0 0 0-3.2Z" fill="${tint}" opacity="0.6"/>
+    </svg>`
+}
+
+/**
+ * The Android tell. The iOS bar above is the wrong chrome on a Play screenshot —
+ * an Apple 4-bar signal and a horizontal battery pill. This is the Material read:
+ * a filled signal triangle, a wifi fan, and a VERTICAL battery (the clearest
+ * platform giveaway). Same 78×14 viewBox so it drops into the same slot.
+ */
+function androidStatusBarSvg(tint, scale) {
+  const s = (n) => n * scale
+  return `
+    <svg class="sb-icons" width="${s(78)}" height="${s(14)}" viewBox="0 0 78 14" fill="none">
+      <path d="M2 13 L18 13 L18 1 Z" fill="${tint}"/>
+      <path d="M31 5a9 9 0 0 1 11 0" stroke="${tint}" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+      <path d="M33.3 8a5.6 5.6 0 0 1 6.4 0" stroke="${tint}" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+      <circle cx="36.5" cy="11" r="1.6" fill="${tint}"/>
+      <rect x="68" y="1.5" width="8" height="11.5" rx="1.4" stroke="${tint}" stroke-width="1.2" fill="none" opacity="0.7"/>
+      <rect x="70.6" y="0.2" width="2.8" height="1.8" rx="0.6" fill="${tint}" opacity="0.7"/>
+      <rect x="69.4" y="5" width="5.2" height="6.5" rx="0.8" fill="${tint}"/>
     </svg>`
 }
 
@@ -71,7 +92,7 @@ function positionedDevice(raw, { left, top, width, tilt, z, device, frame, statu
     <img src="data:image/png;base64,${raw.toString('base64')}" style="width:${width}px; display:block;">
     <div style="position:absolute; left:0; right:0; top:0; height:${sbH}px; display:flex; align-items:center; justify-content:space-between; padding:0 ${Math.round(20 * statusScale)}px; padding-top:${Math.round(6 * statusScale)}px; font-size:${Math.round(17 * statusScale)}px; font-weight:600; color:${statusTint}; letter-spacing:0.01em;">
       <span>${escapeHtml(frame.statusBar?.time ?? '9:41')}</span>
-      ${statusBarSvg(statusTint, statusScale)}
+      ${statusBarSvg(statusTint, statusScale, isAndroid(device))}
     </div>
   </div>
 </div>`
@@ -224,7 +245,7 @@ export function frameHtml({ slide, device, raw, rawSecondary, frame, fontCss, br
     <img src="data:image/png;base64,${raw.toString('base64')}">
     <div class="sb">
       <span>${escapeHtml(frame.statusBar?.time ?? '9:41')}</span>
-      ${statusBarSvg(statusTint, statusScale)}
+      ${statusBarSvg(statusTint, statusScale, isAndroid(device))}
     </div>${navPill}
   </div>
 </div>`

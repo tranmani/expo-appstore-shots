@@ -25,6 +25,13 @@ const app = resolve(here, 'fixture-app')
 const cli = resolve(here, '../src/cli.mjs')
 const out = resolve(app, 'out/6.9/01-home.png')
 
+// One frame per device class, each with the exact store pixel size it must be.
+const DEVICE_OUTPUTS = [
+  { out: '6.9', size: [1290, 2796] },
+  { out: 'android-phone', size: [1080, 2160] },
+  { out: 'android-tablet-7', size: [1200, 1920] },
+]
+
 const haveChromium = (() => {
   try {
     return existsSync(chromium.executablePath())
@@ -50,21 +57,26 @@ after(async () => {
 test('the app renders with no runtime errors', { skip: skip() }, () => {
   // capture.mjs prints "! device/screen: …" for anything the page threw.
   assert.ok(!stdout.includes('✗'), `page errors:\n${stdout}`)
-  assert.match(stdout, /1 frames in /)
+  assert.match(stdout, /3 frames in /)
   // Every route the fixture app calls is seeded, so nothing fell through.
   assert.ok(!stdout.includes('had no fixture'), stdout)
 })
 
-test('the frame is exactly the size App Store Connect asks for', { skip: skip() }, async () => {
-  const png = PNG.sync.read(await readFile(out))
-  assert.equal(png.width, 1290)
-  assert.equal(png.height, 2796)
-})
-
-test('the frame carries no alpha channel', { skip: skip() }, async () => {
-  // colorType 2 = truecolour, no alpha. Apple rejects 6 (truecolour + alpha).
-  const buf = await readFile(out)
-  assert.equal(buf.readUInt8(25), 2, 'PNG colour type in the IHDR chunk')
+test('EVERY device class is exactly its store pixel size, opaque', { skip: skip() }, async () => {
+  // Not just the iPhone: the checklist demands this per device, because an
+  // android or tablet frame that came out the wrong size or with an alpha channel
+  // is a rejected upload that the iPhone assertion would never catch.
+  for (const d of DEVICE_OUTPUTS) {
+    const file = resolve(app, `out/${d.out}/01-home.png`)
+    const buf = await readFile(file)
+    const png = PNG.sync.read(buf)
+    assert.deepEqual([png.width, png.height], d.size, `${d.out} must be exactly ${d.size.join('×')}`)
+    // colorType 2 = truecolour, no alpha. Apple rejects 6 (truecolour + alpha).
+    assert.equal(buf.readUInt8(25), 2, `${d.out} PNG must carry no alpha channel`)
+    // Sanity ceiling: a real frame is well under the stores' per-image limits
+    // (Play 8 MB, App Store 10 MB) — a wildly larger file signals corruption.
+    assert.ok(buf.length < 8 * 1024 * 1024, `${d.out} frame is ${(buf.length / 1e6).toFixed(1)}MB — over the ceiling`)
+  }
 })
 
 test('the frame is the app, not an empty canvas', { skip: skip() }, async () => {

@@ -36,7 +36,9 @@ export default {
   setup: 'src/app/setup.ts',
 
   api: { fixtures: 'shots/fixtures.mjs' },
-  devices: ['iphone-6.9'],
+  // iPhone, an Android phone, and an Android tablet — so the e2e proves every
+  // device CLASS emits the exact store pixel size, opaque, not just the iPhone.
+  devices: ['iphone-6.9', 'android-phone', 'android-tablet-7'],
 
   slides: [
     {
