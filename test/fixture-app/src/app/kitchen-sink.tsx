@@ -90,8 +90,24 @@ import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs'
 // A local database, which no fixture can reach.
 import { openDatabaseSync } from 'expo-sqlite'
 
-// An asset in a format esbuild had no loader for.
+// The modules a real app imports at module scope that a still frame has no use
+// for but the bundle still needs answered — a view rasteriser, the share sheet,
+// OTA updates, the splash frame, the audio engine, the plumbing under every expo
+// module. Each was a `Could not resolve` that failed the whole run (found by
+// pointing the tool at Perron: station chat, share cards, sound effects).
+import { captureRef } from 'react-native-view-shot'
+import * as Sharing from 'expo-sharing'
+import * as Updates from 'expo-updates'
+import * as SplashScreen from 'expo-splash-screen'
+import { createAudioPlayer } from 'expo-audio'
+import { requireOptionalNativeModule } from 'expo-modules-core'
+import { watchHeadingAsync } from 'expo-location'
+
+// An image esbuild had no loader for, and a sound effect it also had none for —
+// the image renders (dataurl), the sound never plays (empty), and both have to
+// import without failing the build.
 import pixel from './pixel.webp'
+import tap from './tap.wav'
 
 maybeCompleteAuthSession()
 
@@ -250,6 +266,13 @@ export default function KitchenSink() {
     'react-navigation-elements/useHeaderHeight': headerHeight > 0,
     'react-navigation-bottom-tabs/useBottomTabBarHeight': tabBarHeight > 0,
     'expo-auth-session/makeRedirectUri': typeof makeRedirectUri() === 'string',
+    'view-shot/ViewShot component present': typeof captureRef === 'function',
+    'expo-sharing/isAvailableAsync': typeof Sharing.isAvailableAsync === 'function',
+    'expo-updates/channel is a string': typeof Updates.channel === 'string',
+    'expo-splash-screen/hideAsync': typeof SplashScreen.hideAsync === 'function',
+    'expo-audio/createAudioPlayer builds a player': typeof createAudioPlayer(tap).play === 'function',
+    'expo-modules-core/requireOptionalNativeModule is null on web': requireOptionalNativeModule('X') === null,
+    'expo-location/watchHeadingAsync': typeof watchHeadingAsync === 'function',
     'rn-internal/Platform.OS is a real platform': RNPlatform.OS === 'ios' || RNPlatform.OS === 'android',
     'rn-internal/Platform.select picks a branch': RNPlatform.select({ ios: 'yes', default: 'no' }) === 'yes',
 

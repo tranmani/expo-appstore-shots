@@ -202,6 +202,16 @@ function nativeAliases() {
     'react-native-webview': stub('webview.tsx'),
     '@react-native-community/datetimepicker': stub('datetimepicker.tsx'),
     'react-native-screens': stub('noop.ts'),
+    // A view rasteriser, the OS share sheet, OTA updates, the splash frame, the
+    // audio engine, and the plumbing under every expo module — none of which a
+    // still frame has or needs, but each of which an app imports at module scope
+    // and would fail the whole bundle for.
+    'react-native-view-shot': stub('view-shot.tsx'),
+    'expo-sharing': stub('expo-sharing.ts'),
+    'expo-updates': stub('expo-updates.ts'),
+    'expo-splash-screen': stub('expo-splash-screen.ts'),
+    'expo-audio': stub('expo-audio.ts'),
+    'expo-modules-core': stub('expo-modules-core.ts'),
     'expo-file-system': stub('noop.ts'),
     'expo-file-system/legacy': stub('noop.ts'),
     'expo-web-browser': stub('noop.ts'),
@@ -519,10 +529,18 @@ export async function bundle(config) {
     // browser implementations.
     resolveExtensions: ['.web.tsx', '.web.ts', '.web.jsx', '.web.js', '.tsx', '.ts', '.jsx', '.js', '.json'],
     // An asset an app `require()`s has to have a loader or the bundle fails, and
-    // the list of image formats an app might ship is not a thing this tool gets
-    // to have an opinion about — `.webp` is just what Expo's own image tooling
-    // emits now. `config.loaders` is the escape hatch for the rest (`.mp4`,
-    // `.lottie`, `.riv`), because there will always be a next format.
+    // the list of formats an app might ship is not a thing this tool gets to
+    // have an opinion about — `.webp` is just what Expo's own image tooling
+    // emits now. `config.loaders` is the escape hatch for the rest (`.lottie`,
+    // `.riv`), because there will always be a next format.
+    //
+    // Images and fonts are `dataurl` — they render, so they must be present.
+    // Audio and video are `empty`: a sound effect never plays and a video has no
+    // still frame, so the app only needs `require('./tap.wav')` to hand back
+    // *something* it can pass to a player that never runs. `empty` gives it that
+    // without embedding the bytes — a soundtrack as a data URI would bloat every
+    // bundle for nothing. Override to `dataurl` via `config.loaders` if a poster
+    // frame matters.
     loader: {
       '.js': 'jsx',
       '.png': 'dataurl',
@@ -537,6 +555,15 @@ export async function bundle(config) {
       '.otf': 'dataurl',
       '.woff': 'dataurl',
       '.woff2': 'dataurl',
+      '.wav': 'empty',
+      '.mp3': 'empty',
+      '.m4a': 'empty',
+      '.aac': 'empty',
+      '.ogg': 'empty',
+      '.caf': 'empty',
+      '.mp4': 'empty',
+      '.mov': 'empty',
+      '.webm': 'empty',
       ...(config.loaders ?? {}),
     },
     ...(existsSync(tsconfig) ? { tsconfig } : {}),

@@ -57,6 +57,23 @@ export async function watchPositionAsync(_o: unknown, cb: (p: ReturnType<typeof 
   return { remove: () => undefined }
 }
 
+/**
+ * The compass. A radar or a heading-up map reads it, and on a phone that is
+ * facing north the reading is 0 — a fixed frame has a fixed bearing, and 0 is as
+ * honest as any. `watchHeadingAsync` fires once and then holds, the same way
+ * `watchPositionAsync` does: a still frame does not turn.
+ */
+const heading = () => ({ trueHeading: 0, magHeading: 0, accuracy: 3 })
+export const getHeadingAsync = async () => heading()
+export async function watchHeadingAsync(cb: (h: ReturnType<typeof heading>) => void) {
+  cb(heading())
+  return { remove: () => undefined }
+}
+export const enableNetworkProviderAsync = async () => undefined
+export const isBackgroundLocationAvailableAsync = async () => false
+export const getProviderStatusAsync = async () => ({ locationServicesEnabled: true, gpsAvailable: true, networkAvailable: true })
+export const installWebGeolocationPolyfill = () => undefined
+
 /* ------------------------------------------------------ expo-secure-store --- */
 
 let vault: Map<string, string> | null = null

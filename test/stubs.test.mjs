@@ -105,6 +105,17 @@ test('the webp loader is wired up, and the asset is inlined', async () => {
   assert.match(js, /data:image\/webp;base64/, 'the .webp asset was not inlined')
 })
 
+test('an audio asset resolves to an empty module, not a failed build', async () => {
+  // kitchen-sink imports `./tap.wav`. esbuild has no built-in loader for audio,
+  // so without one the whole bundle fails — the same shape as the .webp gap, one
+  // format over. It is `empty`, not `dataurl`: a sound effect never plays in a
+  // still frame, and embedding a soundtrack as a data URI would bloat every
+  // bundle for nothing. The proof is simply that the build above produced JS.
+  const { js } = await build()
+  assert.ok(js.length > 1000, 'the bundle failed — an audio asset had no loader')
+  assert.ok(!/data:audio/.test(js), 'the .wav was embedded; it should be empty')
+})
+
 test('config.loaders can add a format the tool has never heard of', async () => {
   // The escape hatch, because there is always a next format. Turning .webp into
   // a `text` loader is a nonsense choice that nobody would make — which is
