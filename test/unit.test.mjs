@@ -51,10 +51,18 @@ test('config: slide file names are numbered in upload order', () => {
 
 test('devices: every preset is an App Store slot', () => {
   // The exact pixel sizes Apple demands. A wrong number here is a rejected upload.
-  assert.deepEqual(DEVICES['iphone-6.9'].size, [1290, 2796])
+  assert.deepEqual(DEVICES['iphone-6.9'].size, [1290, 2796]) // accepted 6.9" size
   assert.deepEqual(DEVICES['iphone-6.5'].size, [1284, 2778])
+  assert.deepEqual(DEVICES['iphone-6.3'].size, [1206, 2622]) // iPhone 16 Pro slot
   assert.deepEqual(DEVICES['ipad-13'].size, [2064, 2752])
   assert.deepEqual(DEVICES['ipad-12.9'].size, [2048, 2732])
+})
+
+test('devices: 6.3" composes from the 6.9 render, like 6.5', () => {
+  const { chosen, rendered } = resolveDevices(['iphone-6.9', 'iphone-6.3'])
+  assert.equal(chosen.length, 2)
+  assert.equal(rendered.length, 1, '6.3 is composed from the 6.9 render, not shot again')
+  assert.equal(rendered[0].id, 'iphone-6.9')
 })
 
 test('devices: sizes that share a layout are only shot once', () => {

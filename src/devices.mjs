@@ -32,6 +32,23 @@ export const DEVICES = {
     renderWith: 'iphone-6.9',
     kind: 'phone',
   },
+  /**
+   * The 6.3" slot — iPhone 16/17 Pro, a current App Store Connect display size
+   * (it accepts 1179×2556 or 1206×2622; this is the 16 Pro native). Every iPhone
+   * is ~0.46 tall-to-wide, so it composes from the 6.9 render and resizes, the
+   * same way 6.5 does — no extra shot.
+   */
+  'iphone-6.3': {
+    label: 'iPhone 6.3"',
+    out: '6.3',
+    width: 430,
+    height: 932,
+    scale: 3,
+    insets: { top: 62, bottom: 34 },
+    size: [1206, 2622],
+    renderWith: 'iphone-6.9',
+    kind: 'phone',
+  },
   'ipad-13': {
     label: 'iPad 13"',
     out: 'ipad-13',
