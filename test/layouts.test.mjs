@@ -290,6 +290,42 @@ test('config warns when proof (chip/badge) appears past the hero slide', () => {
   assert.match(proof[0], /slide 2/)
 })
 
+test('config warns when readable content bridges across a seam (the signature risk)', () => {
+  const two = { screen: 'a', bridge: 'g' }
+  // A text element at group-x 0.5 sits exactly on the seam of a 2-slide bridge.
+  const split = normalise(
+    {
+      ...baseConfig,
+      slides: [{ ...two }, { screen: 'b', bridge: 'g' }],
+      bridges: { g: { elements: [{ type: 'text', text: '$4.99 / mo', x: 0.5, y: 0.5 }] } },
+    },
+    CONFIG,
+  )
+  assert.ok(split.warnings.some((w) => /across a seam/.test(w)), 'a text element on the seam is flagged')
+
+  // A background image crossing the seam is exactly what bridges are for — no warning.
+  const bg = normalise(
+    {
+      ...baseConfig,
+      slides: [{ screen: 'a', bridge: 'g' }, { screen: 'b', bridge: 'g' }],
+      bridges: { g: { elements: [{ type: 'image', src: 'data:,', x: 0.5, y: 0.5, w: 1.4 }] } },
+    },
+    CONFIG,
+  )
+  assert.ok(!bg.warnings.some((w) => /across a seam/.test(w)), 'a bridged background is not flagged')
+
+  // Readable content kept well inside a column (x 0.2 of a 2-group → left of the 0.5 seam) is fine.
+  const safe = normalise(
+    {
+      ...baseConfig,
+      slides: [{ screen: 'a', bridge: 'g' }, { screen: 'b', bridge: 'g' }],
+      bridges: { g: { elements: [{ type: 'chip', text: 'NEW', x: 0.2, y: 0.5 }] } },
+    },
+    CONFIG,
+  )
+  assert.ok(!safe.warnings.some((w) => /across a seam/.test(w)), 'readable content inside one column is fine')
+})
+
 test('bridgeContexts groups only ADJACENT slides sharing an id', () => {
   const c = bridgeContexts([{ bridge: 'g' }, { bridge: 'g' }, {}, { bridge: 'x' }, { bridge: 'g' }])
   assert.deepEqual(c[0], { id: 'g', n: 2, i: 0 })

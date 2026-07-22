@@ -287,6 +287,35 @@ export function normalise(config, configPath) {
     }
   }
 
+  // The signature risk, made a check instead of a promise. A connected canvas is
+  // safe only if every crop still reads on its own — and the thing that breaks
+  // that is READABLE content (a headline, price, rating) sitting on the seam,
+  // where each screenshot shows half of it. Backgrounds, images and accents are
+  // meant to cross; text is not. `x` is a fraction of the whole n-wide group, so
+  // the seams sit at i/n; a text/chip/badge element whose span covers one is
+  // split. (A warning, matching this file's doctrine — verify never fails a build
+  // — but a loud one, because it is the failure the whole feature exists to avoid.)
+  const READABLE = new Set(['text', 'chip', 'badge'])
+  for (const [id, b] of Object.entries(bridges)) {
+    const n = longestRun[id] ?? 0
+    if (n < 2) continue
+    for (const el of b.elements ?? []) {
+      if (!READABLE.has(el?.type)) continue
+      const x = el.x ?? 0.5
+      const hw = 0.13 / n // a text pill's half-width, expressed in group space
+      for (let i = 1; i < n; i++) {
+        if (x - hw < i / n && x + hw > i / n) {
+          out.warnings.push(
+            `bridge "${id}" puts readable ${el.type} content ("${el.text ?? ''}") across a seam — ` +
+              `each screenshot would show only half of it. Keep readable content inside one column and ` +
+              `bridge a background, image or accent across the seam instead.`,
+          )
+          break
+        }
+      }
+    }
+  }
+
   // The legibility gate — the thumbnail test as a number. A headline reads at a
   // glance only if its ink stands off its ground; below 3:1 it looks fine at full
   // size and disappears in the store's search results. Checked once per ground
