@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { frameHtml, elementsHtml } from '../src/compose.mjs'
 import { layoutPlan, LAYOUTS, isTablet, isAndroid } from '../src/layouts.mjs'
-import { resolveGrounds, renderHeadline, THEMES, DEFAULT_GROUNDS } from '../src/theme.mjs'
+import { resolveGrounds, renderHeadline, contrastRatio, THEMES, DEFAULT_GROUNDS } from '../src/theme.mjs'
 import { normalise, ConfigError } from '../src/config.mjs'
 import { DEVICES } from '../src/devices.mjs'
 
@@ -263,6 +263,30 @@ test('an unknown theme or layout fails at config time, with the list', () => {
     () => normalise({ ...baseConfig, slides: [{ screen: 'a', layout: 'nope' }] }, CONFIG),
     /unknown layout/,
   )
+})
+
+test('the legibility gate warns a washed-out ground, and never a good one', () => {
+  assert.equal(Math.round(contrastRatio('#000000', '#ffffff')), 21)
+  assert.equal(contrastRatio('#123456', '#123456'), 1)
+
+  // A custom ground whose ink barely differs from its background — fine at full
+  // size, gone at 160px — is warned exactly once, per ground, not per slide.
+  const bad = normalise(
+    {
+      ...baseConfig,
+      frame: { grounds: { light: { bg: '#EEEEEE', dot: '#DDD', ink: '#C8C8C8', muted: '#BBB' } } },
+      slides: [{ screen: 'a', headline: 'Hi' }, { screen: 'b', headline: 'Yo' }],
+    },
+    CONFIG,
+  )
+  assert.equal(bad.warnings.filter((w) => /read at thumbnail size/.test(w)).length, 1)
+
+  // The zero-config grounds are high-contrast, so a normal deck is never nagged.
+  const ok = normalise({ ...baseConfig, slides: [{ screen: 'a', headline: 'Hi' }] }, CONFIG)
+  assert.deepEqual(ok.warnings.filter((w) => /thumbnail size/.test(w)), [])
+  // And a slide with NO headline is not a legibility concern.
+  const noHead = normalise({ ...baseConfig, slides: [{ screen: 'a' }] }, CONFIG)
+  assert.deepEqual(noHead.warnings.filter((w) => /thumbnail size/.test(w)), [])
 })
 
 test('an element of unknown type fails at config time', () => {

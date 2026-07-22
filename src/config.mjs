@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LAYOUTS } from './layouts.mjs'
-import { THEMES } from './theme.mjs'
+import { THEMES, resolveGrounds, contrastRatio } from './theme.mjs'
 import { DEVICES } from './devices.mjs'
 
 export class ConfigError extends Error {}
@@ -169,6 +169,23 @@ export function normalise(config, configPath) {
       )
     }
     prevLayout = slide.layout
+  }
+
+  // The legibility gate — the thumbnail test as a number. A headline reads at a
+  // glance only if its ink stands off its ground; below 3:1 it looks fine at full
+  // size and disappears in the store's search results. Checked once per ground
+  // the deck actually captions on, so a bad theme is flagged, not every slide.
+  const grounds = resolveGrounds(config.frame ?? {})
+  const captioned = new Set(out.slides.filter((s) => s.headline).map((s) => s.ground ?? 'light'))
+  for (const mode of captioned) {
+    const g = grounds[mode]
+    const ratio = contrastRatio(g.ink, g.bg)
+    if (ratio < 3) {
+      out.warnings.push(
+        `the ${mode} ground's headline (${g.ink} on ${g.bg}) is only ${ratio.toFixed(1)}:1 — under the 3:1 ` +
+          `a headline needs to read at thumbnail size. Darken the ink or lighten the ground.`,
+      )
+    }
   }
 
   return out

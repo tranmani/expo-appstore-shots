@@ -66,6 +66,30 @@ export function resolveGrounds(frame = {}) {
   return { light: ground('light'), dark: ground('dark') }
 }
 
+/** Relative luminance of a #rrggbb colour, per WCAG. */
+function luminance(hex) {
+  const n = parseInt(String(hex).replace('#', ''), 16)
+  const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    v /= 255
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+}
+
+/**
+ * WCAG contrast ratio between two colours, 1–21.
+ *
+ * The thumbnail test in one number: a headline reads at a glance only if its ink
+ * stands off its ground, and 3:1 is the bar for large text. A ground where the
+ * ink and the background are close produces a frame that looks fine at full size
+ * and vanishes in the App Store's search results — the exact failure a person
+ * scrolling past does not catch.
+ */
+export function contrastRatio(a, b) {
+  const [x, y] = [luminance(a) + 0.05, luminance(b) + 0.05]
+  return Math.max(x, y) / Math.min(x, y)
+}
+
 const escapeHtml = (s) =>
   String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
 
