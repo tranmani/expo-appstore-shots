@@ -306,12 +306,17 @@ export function bridgeContexts(slides) {
  * copy or layout — never the app render, so the raws are shot once and composed
  * under each variant. `frame` merges shallowly; `slides` merges by index, so a
  * variant can restyle the whole deck, rewrite one headline, or both.
+ *
+ * The index a variant's `slides[i]` refers to is the AUTHORED-deck index. When
+ * `--screen` has narrowed the deck, `applyFilters` stamps each survivor's
+ * original position on `_srcIndex`, and we match by that — so an override never
+ * slides onto the wrong screen when the array was reindexed.
  */
 export function applyVariant(config, variant) {
   return {
     ...config,
     frame: { ...(config.frame ?? {}), ...(variant.frame ?? {}) },
-    slides: config.slides.map((s, i) => ({ ...s, ...(variant.slides?.[i] ?? {}) })),
+    slides: config.slides.map((s, i) => ({ ...s, ...(variant.slides?.[s._srcIndex ?? i] ?? {}) })),
   }
 }
 
@@ -355,8 +360,10 @@ export async function compose({ browser, config, devices, fontCss, rawDir, outDi
       // clears the config-time contrast check can still die once the listing
       // shrinks it to ~160px. Only captioned slides carry a headline to read.
       if (slide.headline) {
-        const anchor = layoutPlan(slide.layout ?? 'standard', device).captionAnchor
-        const ratio = thumbnailLegibility(PNG.sync.read(png), anchor)
+        // The band to measure is where the caption actually renders — after any
+        // per-device-kind `frame.layout` override, the same merge frameHtml does.
+        const plan = { ...layoutPlan(slide.layout ?? 'standard', device), ...(frame.layout?.[device.kind] ?? {}) }
+        const ratio = thumbnailLegibility(PNG.sync.read(png), plan.captionAnchor)
         if (ratio < THUMBNAIL_MIN) legibility.push({ file: `${device.out}/${name}`, ratio })
       }
     }

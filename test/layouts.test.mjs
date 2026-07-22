@@ -288,7 +288,21 @@ test('a variant repackages the deck — theme over the whole, copy per slide', (
   assert.equal(base.frame.theme, 'clean-light')
 })
 
-test('variants are validated — named, unique, real theme', () => {
+test('a variant override matches the AUTHORED slide index after --screen narrows the deck', () => {
+  // The deck is [a, b, c]; the variant restyles slide 0 (screen a) only. After a
+  // --screen filter keeps just c (now at array index 0), the override must NOT
+  // land on c — it is authored against slide 0. applyFilters stamps _srcIndex; a
+  // filtered slide carries its original position.
+  const filtered = { slides: [{ screen: 'c', headline: 'C', _srcIndex: 2 }] }
+  const v = applyVariant(filtered, { name: 'bold', slides: [{ headline: 'A!' }] }) // slides[0] targets screen a
+  assert.equal(v.slides[0].headline, 'C', 'the override for slide 0 does not leak onto the reindexed slide c')
+
+  // And when c itself is the target (override at authored index 2), it applies.
+  const v2 = applyVariant(filtered, { name: 'bold', slides: [, , { headline: 'C!' }] })
+  assert.equal(v2.slides[0].headline, 'C!', 'the override authored at index 2 reaches slide c')
+})
+
+test('variants are validated — named, unique, plain folder, real theme, real layout', () => {
   assert.throws(() => normalise({ ...baseConfig, variants: [{ frame: {} }] }, CONFIG), /needs a name/)
   assert.throws(
     () => normalise({ ...baseConfig, variants: [{ name: 'x' }, { name: 'x' }] }, CONFIG),
@@ -298,17 +312,33 @@ test('variants are validated — named, unique, real theme', () => {
     () => normalise({ ...baseConfig, variants: [{ name: 'x', frame: { theme: 'nope' } }] }, CONFIG),
     /unknown theme/,
   )
+  // A name is joined onto outDir as a folder — path separators and `..` are refused.
+  for (const bad of ['../pwned', 'a/b', '..', '/abs']) {
+    assert.throws(
+      () => normalise({ ...baseConfig, variants: [{ name: bad }] }, CONFIG),
+      /plain folder name/,
+      `variant name "${bad}" must be rejected`,
+    )
+  }
+  // A mistyped layout in a variant override fails up front, not mid-compose.
+  assert.throws(
+    () => normalise({ ...baseConfig, variants: [{ name: 'x', slides: [{ layout: 'bogus' }] }] }, CONFIG),
+    /unknown layout/,
+  )
   const ok = normalise({ ...baseConfig, variants: [{ name: 'warm', frame: { theme: 'warm-editorial' } }] }, CONFIG)
   assert.equal(ok.variants.length, 1)
 })
 
 /* -------------------------------------------------- thumbnail legibility --- */
 
-// A synthetic frame: a white ground with a striped caption band. `strokeAt`
-// controls the ink of the stripes — black is a legible headline, near-white is
-// one that washes out. Stripes (not a solid fill) so the median stays ground and
-// the percentile catches the strokes, exactly as real antialiased type behaves.
-function striped({ height = 1000, width = 160, band = [0.045, 0.19], stroke = 0 }) {
+// A synthetic frame: a white ground with a striped caption band. `stroke` is the
+// ink of the stripes — black is a legible headline, near-white one that washes
+// out. Stripes (not a solid fill) so the median stays ground and the percentile
+// catches the strokes, as real antialiased type behaves. WIDTH IS A REAL STORE
+// WIDTH (1290) on purpose: at 160px thumbnails that is an 8× box-average, so the
+// downscale kernel — the whole point of the function — is actually exercised. A
+// 160-wide fixture would make scale=1 and skip the averaging entirely.
+function striped({ height = 1000, width = 1290, band = [0.045, 0.19], stroke = 0, strokeW = 10, period = 20 }) {
   const png = new PNG({ width, height })
   const y0 = Math.floor(band[0] * height)
   const y1 = Math.ceil(band[1] * height)
@@ -316,7 +346,7 @@ function striped({ height = 1000, width = 160, band = [0.045, 0.19], stroke = 0 
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4
       const inBand = y >= y0 && y < y1
-      const v = inBand && x % 2 === 0 ? stroke : 255
+      const v = inBand && x % period < strokeW ? stroke : 255
       png.data[i] = png.data[i + 1] = png.data[i + 2] = v
       png.data[i + 3] = 255
     }
@@ -332,6 +362,16 @@ test('thumbnail gate: a black headline over white reads at 160px', () => {
 test('thumbnail gate: a near-tone headline washes out and fails', () => {
   const ratio = thumbnailLegibility(striped({ stroke: 238 }), 'top') // #EE grey on white
   assert.ok(ratio < THUMBNAIL_MIN, `near-tone should fail, got ${ratio.toFixed(2)}`)
+})
+
+test('thumbnail gate actually averages the downscale kernel', () => {
+  // At 1290px a 160px thumbnail is an 8×8 box-average; the ink stripes only
+  // survive if the per-block mean is computed. A black striped band lands at a
+  // real, non-saturated mid-tone after averaging — a value the /n division has
+  // to produce. (A regression that summed instead of averaged would blow the
+  // luminance out of range and mis-score this.)
+  const ratio = thumbnailLegibility(striped({ stroke: 0 }), 'top')
+  assert.ok(ratio > 3 && ratio < 12, `averaged black stripes score in a sane band, got ${ratio.toFixed(2)}`)
 })
 
 test('thumbnail gate measures the band the caption is anchored in', () => {

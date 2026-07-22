@@ -128,11 +128,40 @@ export function normalise(config, configPath) {
     const names = new Set()
     for (const v of config.variants) {
       if (!v.name) throw new ConfigError('every variant needs a name')
+      // The name is joined onto outDir as a folder, so it must be a single plain
+      // path segment — no separators, no `..` — or a variant could write outside
+      // the output tree and silently overwrite unrelated files.
+      if (!/^[\w.-]+$/.test(v.name) || v.name === '.' || v.name === '..') {
+        throw new ConfigError(`variant name "${v.name}" must be a plain folder name (letters, digits, . _ -)`)
+      }
       if (names.has(v.name)) throw new ConfigError(`duplicate variant name "${v.name}"`)
       names.add(v.name)
       if (v.frame?.theme && !THEMES[v.frame.theme]) {
         throw new ConfigError(
           `variant "${v.name}" names unknown theme "${v.frame.theme}" (have: ${Object.keys(THEMES).join(', ')})`,
+        )
+      }
+      // A variant's per-slide overrides face the same mid-compose failures a base
+      // slide does, so they get the same up-front checks — a mistyped layout or
+      // element type fails here, not after the browser is already up.
+      for (const s of v.slides ?? []) {
+        if (s?.layout && !LAYOUTS.includes(s.layout)) {
+          throw new ConfigError(`variant "${v.name}" has unknown layout "${s.layout}" (have: ${LAYOUTS.join(', ')})`)
+        }
+        for (const el of s?.elements ?? []) {
+          if (!ELEMENT_TYPES.includes(el?.type)) {
+            throw new ConfigError(
+              `variant "${v.name}" has an element of unknown type "${el?.type}" (have: ${ELEMENT_TYPES.join(', ')})`,
+            )
+          }
+        }
+      }
+      // Overrides past the end of the deck merge onto nothing — a silent no-op
+      // that reads like the variant adds slides. Say so.
+      if ((v.slides?.length ?? 0) > out.slides.length) {
+        out.warnings.push(
+          `variant "${v.name}" has ${v.slides.length} slide overrides but the deck has ${out.slides.length} — ` +
+            `the extra ${v.slides.length - out.slides.length} are ignored (variants repackage, they don't add slides).`,
         )
       }
     }

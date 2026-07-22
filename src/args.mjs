@@ -35,7 +35,14 @@ export function applyFilters(config, argv) {
       throw new ConfigError(`--screen ${missing.join(', ')}: no such screen. Have: ${have.join(', ')}`)
     }
     config.screens = config.screens.filter((s) => only.includes(s.id))
-    config.slides = config.slides.filter((s) => only.includes(s.screen))
+    // Stamp each surviving slide with its index in the FULL deck before dropping
+    // the rest. A variant's per-slide overrides (`variant.slides[i]`) are authored
+    // against the full deck, so once `--screen` reindexes the array, applying them
+    // by the new position lands them on the wrong slide — the tool's cardinal sin.
+    // `_srcIndex` lets `applyVariant` keep matching by the authored position.
+    config.slides = config.slides
+      .map((s, i) => ({ ...s, _srcIndex: i }))
+      .filter((s) => only.includes(s.screen))
   }
 
   if (devices.length) config.devices = devices
