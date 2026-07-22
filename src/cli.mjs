@@ -24,7 +24,7 @@ import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { bundle } from './build.mjs'
 import { capture } from './capture.mjs'
-import { compose } from './compose.mjs'
+import { compose, applyVariant } from './compose.mjs'
 import { applyFilters } from './args.mjs'
 import { ConfigError, normalise } from './config.mjs'
 import { resolveDevices } from './devices.mjs'
@@ -407,18 +407,25 @@ async function shoot() {
     }
 
     if (!args.includes('--raw')) {
-      step('composing store frames')
-      const written = await compose({
-        browser,
-        config,
-        devices: chosen,
-        fontCss: await fontCss(config),
-        rawDir: resolve(config.workDir, 'raw'),
-        outDir: config.outDir,
-      })
+      const css = await fontCss(config)
+      const rawDir = resolve(config.workDir, 'raw')
 
-      console.log(`\n${written.length} frames in ${config.outDir}/`)
-      for (const f of written) console.log(`  ${f}`)
+      // A/B variants share the raws (a variant only repackages), so they compose
+      // into their own folders off one capture. No variants = the deck straight
+      // into outDir, exactly as before.
+      const jobs = config.variants?.length
+        ? config.variants.map((v) => ({ config: applyVariant(config, v), outDir: resolve(config.outDir, v.name), label: v.name }))
+        : [{ config, outDir: config.outDir, label: null }]
+
+      step(config.variants?.length ? `composing ${jobs.length} variant(s)` : 'composing store frames')
+      let total = 0
+      for (const job of jobs) {
+        const written = await compose({ browser, config: job.config, devices: chosen, fontCss: css, rawDir, outDir: job.outDir })
+        total += written.length
+        if (job.label) console.log(`  ${job.label}: ${written.length} frames → ${job.outDir}/`)
+      }
+      if (!config.variants?.length) console.log(`\n${total} frames in ${config.outDir}/`)
+      else console.log(`\n${total} frames across ${jobs.length} variants in ${config.outDir}/`)
     } else {
       console.log(`\nraw screens in ${resolve(config.workDir, 'raw')}`)
     }

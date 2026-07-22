@@ -298,6 +298,22 @@ export function bridgeContexts(slides) {
   return ctx
 }
 
+/**
+ * A deck under a variant's overrides, for A/B sets.
+ *
+ * A variant changes only the packaging — the theme/grounds and, per slide, the
+ * copy or layout — never the app render, so the raws are shot once and composed
+ * under each variant. `frame` merges shallowly; `slides` merges by index, so a
+ * variant can restyle the whole deck, rewrite one headline, or both.
+ */
+export function applyVariant(config, variant) {
+  return {
+    ...config,
+    frame: { ...(config.frame ?? {}), ...(variant.frame ?? {}) },
+    slides: config.slides.map((s, i) => ({ ...s, ...(variant.slides?.[i] ?? {}) })),
+  }
+}
+
 export async function compose({ browser, config, devices, fontCss, rawDir, outDir }) {
   const frame = config.frame ?? {}
   const bridges = config.bridges ?? {}

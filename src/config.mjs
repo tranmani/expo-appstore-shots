@@ -121,6 +121,23 @@ export function normalise(config, configPath) {
     )
   }
 
+  // A/B variants: each is a named packaging of the same screens. The name becomes
+  // an output folder, so it has to be present and unique; a mistyped theme fails
+  // here, not after N browser launches.
+  if (config.variants) {
+    const names = new Set()
+    for (const v of config.variants) {
+      if (!v.name) throw new ConfigError('every variant needs a name')
+      if (names.has(v.name)) throw new ConfigError(`duplicate variant name "${v.name}"`)
+      names.add(v.name)
+      if (v.frame?.theme && !THEMES[v.frame.theme]) {
+        throw new ConfigError(
+          `variant "${v.name}" names unknown theme "${v.frame.theme}" (have: ${Object.keys(THEMES).join(', ')})`,
+        )
+      }
+    }
+  }
+
   let prevLayout
   for (const slide of out.slides) {
     if (!ids.has(slide.screen)) {

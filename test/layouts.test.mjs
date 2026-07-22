@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { frameHtml, elementsHtml, bridgeContexts } from '../src/compose.mjs'
+import { frameHtml, elementsHtml, bridgeContexts, applyVariant } from '../src/compose.mjs'
 import { layoutPlan, LAYOUTS, isTablet, isAndroid } from '../src/layouts.mjs'
 import { resolveGrounds, renderHeadline, contrastRatio, THEMES, DEFAULT_GROUNDS } from '../src/theme.mjs'
 import { normalise, ConfigError } from '../src/config.mjs'
@@ -268,6 +268,36 @@ test('an eyebrow rides above the headline, in the accent, opt-in', () => {
   assert.match(out, /\.eyebrow \{[^}]*text-transform: uppercase/)
   // A slide with no eyebrow emits neither the div nor the rule (byte-identity).
   assert.ok(!html({ screen: 'x', headline: 'Big' }).includes('eyebrow'))
+})
+
+test('a variant repackages the deck — theme over the whole, copy per slide', () => {
+  const base = {
+    frame: { theme: 'clean-light', bezel: '#111' },
+    slides: [{ screen: 'a', headline: 'One' }, { screen: 'b', headline: 'Two' }],
+  }
+  const v = applyVariant(base, { name: 'bold', frame: { theme: 'dark-bold' }, slides: [{ headline: 'ONE!' }] })
+  assert.equal(v.frame.theme, 'dark-bold', 'the variant theme wins')
+  assert.equal(v.frame.bezel, '#111', 'unoverridden frame keys are kept')
+  assert.equal(v.slides[0].headline, 'ONE!', 'slide 0 copy is overridden by index')
+  assert.equal(v.slides[0].screen, 'a', 'the screen (and everything unset) is kept')
+  assert.equal(v.slides[1].headline, 'Two', 'a slide the variant did not touch is unchanged')
+  // The base is not mutated.
+  assert.equal(base.slides[0].headline, 'One')
+  assert.equal(base.frame.theme, 'clean-light')
+})
+
+test('variants are validated — named, unique, real theme', () => {
+  assert.throws(() => normalise({ ...baseConfig, variants: [{ frame: {} }] }, CONFIG), /needs a name/)
+  assert.throws(
+    () => normalise({ ...baseConfig, variants: [{ name: 'x' }, { name: 'x' }] }, CONFIG),
+    /duplicate variant/,
+  )
+  assert.throws(
+    () => normalise({ ...baseConfig, variants: [{ name: 'x', frame: { theme: 'nope' } }] }, CONFIG),
+    /unknown theme/,
+  )
+  const ok = normalise({ ...baseConfig, variants: [{ name: 'warm', frame: { theme: 'warm-editorial' } }] }, CONFIG)
+  assert.equal(ok.variants.length, 1)
 })
 
 /* ------------------------------------------------------------- config gate --- */
