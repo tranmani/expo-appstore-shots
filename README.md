@@ -207,6 +207,64 @@ is one string however many ways the app spells it. (A barrel is not a problem
 for either: `export * from './Chart'` is itself an import of `./Chart`, so a
 `Chart$` rule does fire through it.)
 
+## Composition
+
+Every slide is `standard` by default — the caption on top, the device below, the
+look the tool has always drawn. From there, a deck is a set of opt-in choices.
+None of them changes a slide that doesn't ask for them.
+
+**Layouts** — vary the composition so a deck reads with rhythm, never one long
+slide (the run warns if two adjacent slides choose the same one):
+
+```js
+slides: [
+  { screen: 'home',   layout: 'hero' },          // big headline, device dropped low
+  { screen: 'detail', layout: 'device-top' },     // device up, caption beneath
+  { screen: 'stats',  layout: 'no-device' },      // a centred statement, no phone
+  { screen: 'chat',   layout: 'two-devices', screenSecondary: 'home' }, // two phones layered
+  // also: device-bottom
+]
+```
+
+**Themes** — five coherent light+dark palettes with a shared accent, or your own:
+
+```js
+frame: {
+  theme: 'clean-light',   // clean-light · dark-bold · warm-editorial · ocean-fresh · bloom-roast
+  // grounds: { light: { bg, dot, ink, muted, accent } }  ← still overrides, token by token
+}
+```
+
+**Headlines** carry one accented word, and an eyebrow rides above:
+
+```js
+{ screen: 'home', eyebrow: 'Editors’ Choice', headline: 'A home for *every* coffee.' }
+```
+
+**Decorative accents** — a stat chip, a proof badge, a built-in sparkle or
+squiggle, a line of text, an image — placed by fractions of the frame, so one
+placement holds on every device. Sparingly, on the hero:
+
+```js
+{ screen: 'home', elements: [
+  { type: 'chip', text: '4.9 ★ · 12k ratings', x: 0.72, y: 0.14, rotation: -4 },
+  { type: 'squiggle', x: 0.4, y: 0.28, color: '#5B7CFA' },
+]}
+```
+
+**Connected canvas** — a decorative object crosses the seam between two adjacent
+slides, so the store page reads as one panorama while each screenshot still
+stands alone:
+
+```js
+slides:  [{ screen: 'nearby', bridge: 'g' }, { screen: 'station', bridge: 'g' }],
+bridges: { g: { elements: [{ type: 'image', src: glowDataUri, x: 0.5, y: 0.32, w: 0.6 }] } },
+```
+
+`x: 0.5` is the seam of the two-wide group; the object lands at the right edge of
+the first slide and the left edge of the second. Only decorative elements bridge
+— captions and devices stay whole per slide — so a headline is never split.
+
 ## React Navigation
 
 The tool grew up around expo-router, but a React Navigation app needs no
