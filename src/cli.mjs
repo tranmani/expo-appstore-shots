@@ -15,6 +15,9 @@
  *                                         motion), encoded to the store spec
  *   npx expo-appstore-shots watch         live preview: shoot once, then
  *                                         recompose in the browser on every save
+ *   npx expo-appstore-shots --zip         …and bundle the frames into one
+ *                                         store-ready appstore.zip
+ *   npx expo-appstore-shots pack          zip already-composed frames, no reshoot
  *
  * Every run ends with what is wrong with the pictures: clipped text, dead space,
  * content under the chrome, fixtures nobody asked for. A clean run is not a
@@ -30,6 +33,7 @@ import { bundle } from './build.mjs'
 import { capture } from './capture.mjs'
 import { compose, variantJobs } from './compose.mjs'
 import { serveWatch } from './watch.mjs'
+import { pack } from './pack.mjs'
 import { applyFilters, flagValues } from './args.mjs'
 import { ConfigError, normalise } from './config.mjs'
 import { resolveDevices } from './devices.mjs'
@@ -56,6 +60,7 @@ if (args[0] === 'init') await init()
 else if (args[0] === 'graphics') await graphics()
 else if (args[0] === 'preview') await preview()
 else if (args[0] === 'watch') await watchLive()
+else if (args[0] === 'pack') await packCmd()
 else await shoot()
 
 /**
@@ -401,6 +406,24 @@ async function watchLive() {
   })
 }
 
+/**
+ * Bundle the already-composed frames into one store-ready ZIP, without re-shooting.
+ *
+ * The frames on disk are the input; this only re-files them into the
+ * platform/device/size/locale hierarchy the upload UIs expect and zips it — the
+ * hand-off a non-CI user actually wants. `--zip` on a normal run does the same
+ * thing in one step; this is for when the frames already exist.
+ */
+async function packCmd() {
+  const config = await loadConfig()
+  const zipPath = `${config.outDir}.zip`
+  step('packing a store-ready bundle')
+  const names = await pack({ outDir: config.outDir, zipPath, locale: flagValues(args, '--locale')[0] })
+  if (!names.length) fail(`no frames in ${config.outDir}/ — run a shoot first`)
+  console.log(`\n${names.length} frame(s) → ${zipPath}`)
+  for (const n of names) console.log(`  ${n}`)
+}
+
 async function shoot() {
   let config = await loadConfig()
   let chosen
@@ -510,6 +533,13 @@ async function shoot() {
       }
       if (!config.variants?.length) console.log(`\n${total} frames in ${config.outDir}/`)
       else console.log(`\n${total} frames across ${jobs.length} variants in ${config.outDir}/`)
+
+      if (args.includes('--zip')) {
+        const zipPath = `${config.outDir}.zip`
+        step('packing a store-ready bundle')
+        const names = await pack({ outDir: config.outDir, zipPath, locale: flagValues(args, '--locale')[0] })
+        console.log(`  ${names.length} frame(s) → ${zipPath}`)
+      }
     } else {
       console.log(`\nraw screens in ${resolve(config.workDir, 'raw')}`)
     }

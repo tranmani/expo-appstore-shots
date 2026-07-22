@@ -69,6 +69,30 @@ the exact same compositor the headless run does, so a frame you nudge toward in 
 browser is byte-for-byte the frame CI will render from the committed config. Config
 stays the source of truth; the browser is just a faster way to look at it.
 
+## One bundle to upload
+
+`--zip` (or the `pack` command on frames you already have) files every composed
+frame into the hierarchy the store upload UIs expect — platform, device, exact
+pixel slot, locale — and writes a single archive:
+
+```bash
+npx expo-appstore-shots --zip              # → appstore.zip alongside appstore/
+npx expo-appstore-shots pack               # zip existing frames, no re-shoot
+npx expo-appstore-shots pack --locale fr   # nest this run's frames under fr/
+```
+
+```
+appstore.zip
+├─ ios/6.9 1290x2796/01-home.png
+├─ ios/6.9 1290x2796/02-chat.png
+└─ android/android-phone 1080x2160/01-home.png
+```
+
+Variant decks keep their folder (`A-default/ios/…`). The archive is written by
+hand from `node:zlib` — no zip dependency, like the bundled Chromium and ffmpeg —
+and it is deterministic: the same frames produce the same bytes, so a committed
+bundle diffs cleanly.
+
 ## Store graphics
 
 The stores want more than screens. Play will not publish without a **512×512 icon**
