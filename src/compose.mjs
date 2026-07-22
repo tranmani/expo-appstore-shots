@@ -10,7 +10,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { PNG } from 'pngjs'
 import { slideFile } from './config.mjs'
-import { resolveGrounds, renderHeadline, escapeHtml } from './theme.mjs'
+import { resolveGrounds, renderHeadline, escapeHtml, contrastRatio } from './theme.mjs'
 import { layoutPlan, isAndroid, isTablet } from './layouts.mjs'
 import { thumbnailLegibility, THUMBNAIL_MIN } from './verify.mjs'
 
@@ -115,15 +115,24 @@ export function elementsHtml(elements, { W, H, ground, bridge }) {
       const base = `position:absolute; left:${left}px; top:${top}px; z-index:${el.z ?? 5}; transform:translate(-50%,-50%)${rot}; transform-origin:center;`
       switch (el.type) {
         case 'chip':
-        case 'badge':
-          return `<div style="${base} background:${el.color ?? ground.accent}; color:${el.textColor ?? '#fff'}; padding:${px(0.017)}px ${px(0.032)}px; border-radius:999px; font-size:${px(el.size ?? 0.03)}px; font-weight:700; white-space:nowrap; box-shadow:0 ${px(0.006)}px ${px(0.022)}px rgba(0,0,0,0.16);">${escapeHtml(el.text ?? '')}</div>`
+        case 'badge': {
+          // The pill defaults to the accent, and the accent is LIGHT on a dark
+          // ground — so a hard-coded white label would be white-on-light and
+          // vanish on exactly the dark hero a proof chip is made for. Default the
+          // text to whichever of black/white actually contrasts with the pill.
+          const bg = el.color ?? ground.accent
+          const label = el.textColor ?? (contrastRatio(bg, '#ffffff') >= contrastRatio(bg, '#111111') ? '#fff' : '#111')
+          return `<div style="${base} background:${bg}; color:${label}; padding:${px(0.017)}px ${px(0.032)}px; border-radius:999px; font-size:${px(el.size ?? 0.03)}px; font-weight:700; white-space:nowrap; box-shadow:0 ${px(0.006)}px ${px(0.022)}px rgba(0,0,0,0.16);">${escapeHtml(el.text ?? '')}</div>`
+        }
         case 'text':
           return `<div style="${base} color:${el.color ?? ground.ink}; font-size:${px(el.size ?? 0.035)}px; font-weight:${el.weight ?? 700}; white-space:nowrap; letter-spacing:-0.01em;">${escapeHtml(el.text ?? '')}</div>`
         case 'sparkle':
         case 'squiggle':
           return `<div style="${base}">${accentSvg(el.type, el.color ?? ground.accent, px(el.size ?? 0.08))}</div>`
         case 'image':
-          return `<img src="${el.src}" style="${base} width:${px(el.w ?? 0.2)}px; display:block;">`
+          // el.src lands in an HTML attribute, so it is escaped like every other
+          // author string — a src with a quote must not break out into markup.
+          return `<img src="${escapeHtml(el.src ?? '')}" style="${base} width:${px(el.w ?? 0.2)}px; display:block;">`
         default:
           return ''
       }

@@ -168,7 +168,7 @@ export function normalise(config, configPath) {
   }
 
   let prevLayout
-  for (const slide of out.slides) {
+  for (const [slideIndex, slide] of out.slides.entries()) {
     if (!ids.has(slide.screen)) {
       throw new ConfigError(`slide references unknown screen "${slide.screen}"`)
     }
@@ -194,6 +194,32 @@ export function normalise(config, configPath) {
           `slide "${slide.screen}" has an element of unknown type "${el?.type}" (have: ${ELEMENT_TYPES.join(', ')})`,
         )
       }
+      // Elements are centered and clipped by the frame's overflow:hidden, so one
+      // placed near an edge is silently truncated with no error. We cannot know a
+      // text pill's rendered width, so we estimate a half-extent per type and warn
+      // when the box would cross the frame. A warning, not a clamp — moving the
+      // element would override author intent; telling them is the tool's job.
+      const x = el.x ?? 0.5
+      const y = el.y ?? 0.5
+      const halfW =
+        el.type === 'image' ? (el.w ?? 0.2) / 2 : el.type === 'sparkle' || el.type === 'squiggle' ? (el.size ?? 0.08) / 2 : 0.13
+      const halfH = el.type === 'image' ? (el.w ?? 0.2) / 2 : 0.05
+      if (x - halfW < 0 || x + halfW > 1 || y - halfH < 0 || y + halfH > 1) {
+        out.warnings.push(
+          `slide "${slide.screen}" has a ${el.type} element near the frame edge (x:${x}, y:${y}) — ` +
+            `it may be clipped. Pull it toward the centre.`,
+        )
+      }
+    }
+
+    // Proof — a rating chip, an "Editors' Choice" badge — is credible on the hero
+    // and reads as clutter when it repeats down the deck. Warn if it appears past
+    // the first slide, their doctrine and ours: proof on the hero only.
+    if (slideIndex > 0 && (slide.elements ?? []).some((el) => el?.type === 'chip' || el?.type === 'badge')) {
+      out.warnings.push(
+        `slide "${slide.screen}" (slide ${slideIndex + 1}) carries a proof chip/badge — ` +
+          `proof reads as credible on the hero and as clutter when repeated. Keep it on the first slide.`,
+      )
     }
 
     // `two-devices` needs a second screen; without one it quietly renders a

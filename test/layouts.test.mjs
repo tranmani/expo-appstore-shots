@@ -243,6 +243,53 @@ test('elements composite over the ground — chip, accents, text, image', () => 
   assert.equal(elementsHtml([], { W: 1290, H: 2796, ground: g }), '', 'no elements → nothing')
 })
 
+test('a chip label defaults to a colour that contrasts with the pill', () => {
+  // Dark ground → light accent pill: the label must be dark, not the old #fff.
+  const dark = { bg: '#14161b', dot: '#242832', ink: '#f6f1ea', muted: '#aaa', accent: '#8fa6ff' }
+  const onDark = elementsHtml([{ type: 'chip', text: 'A', x: 0.5, y: 0.5 }], { W: 1290, H: 2796, ground: dark })
+  assert.match(onDark, /color:#111/, 'light accent pill gets a dark label')
+  // Dark accent pill → light label.
+  const light = { bg: '#fff', dot: '#eee', ink: '#111', muted: '#666', accent: '#1c3a8f' }
+  const onLight = elementsHtml([{ type: 'chip', text: 'A', x: 0.5, y: 0.5 }], { W: 1290, H: 2796, ground: light })
+  assert.match(onLight, /color:#fff/, 'dark accent pill keeps a white label')
+})
+
+test('an image element src is escaped into its attribute', () => {
+  const g = { bg: '#fff', dot: '#eee', ink: '#111', muted: '#666', accent: '#0a7' }
+  const out = elementsHtml([{ type: 'image', src: 'x"><script>bad()</script>', x: 0.5, y: 0.5 }], { W: 1290, H: 2796, ground: g })
+  assert.doesNotMatch(out, /<script>bad/, 'a quote in src cannot break out into markup')
+  assert.match(out, /&quot;&gt;/, 'the quote and angle bracket are escaped')
+})
+
+test('config warns when an element sits at the frame edge (would be clipped)', () => {
+  const near = normalise(
+    { ...baseConfig, slides: [{ screen: 'a', elements: [{ type: 'chip', text: '★', x: 0.95, y: 0.1 }] }] },
+    CONFIG,
+  )
+  assert.ok(near.warnings.some((w) => /near the frame edge/.test(w)), 'an edge chip is flagged')
+  const centered = normalise(
+    { ...baseConfig, slides: [{ screen: 'a', elements: [{ type: 'chip', text: '★', x: 0.5, y: 0.5 }] }] },
+    CONFIG,
+  )
+  assert.ok(!centered.warnings.some((w) => /near the frame edge/.test(w)), 'a centered chip is fine')
+})
+
+test('config warns when proof (chip/badge) appears past the hero slide', () => {
+  const deck = normalise(
+    {
+      ...baseConfig,
+      slides: [
+        { screen: 'a', elements: [{ type: 'chip', text: '4.9 ★', x: 0.5, y: 0.1 }] },
+        { screen: 'b', elements: [{ type: 'chip', text: '4.9 ★', x: 0.5, y: 0.1 }] },
+      ],
+    },
+    CONFIG,
+  )
+  const proof = deck.warnings.filter((w) => /proof/.test(w))
+  assert.equal(proof.length, 1, 'only the second slide is flagged, not the hero')
+  assert.match(proof[0], /slide 2/)
+})
+
 test('bridgeContexts groups only ADJACENT slides sharing an id', () => {
   const c = bridgeContexts([{ bridge: 'g' }, { bridge: 'g' }, {}, { bridge: 'x' }, { bridge: 'g' }])
   assert.deepEqual(c[0], { id: 'g', n: 2, i: 0 })
