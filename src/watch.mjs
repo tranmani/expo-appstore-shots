@@ -23,10 +23,10 @@
  */
 import { createServer } from 'node:http'
 import { watch as fsWatch } from 'node:fs'
-import { stat, readdir, readFile } from 'node:fs/promises'
-import { resolve, join, relative, extname } from 'node:path'
+import { stat, readdir, readFile, rm } from 'node:fs/promises'
+import { resolve, join, relative, extname, basename } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { compose } from './compose.mjs'
+import { compose, variantJobs } from './compose.mjs'
 import { resolveDevices } from './devices.mjs'
 import { normalise, ConfigError } from './config.mjs'
 
@@ -36,34 +36,45 @@ const MIME = { '.png': 'image/png', '.html': 'text/html; charset=utf-8', '.js': 
  * Re-read the config from disk, defeating the ESM module cache.
  *
  * `import()` caches by URL, so importing the same path twice returns the FIRST
- * version forever — exactly wrong for a file we expect to change. A `?t=<mtime>`
- * query makes each save a distinct URL, so a saved edit is actually re-read. The
- * mtime (not a counter) means an unchanged file re-uses the cache, and it is
- * stable across a resume.
+ * version forever — exactly wrong for a file we expect to change. A `?t=` query
+ * makes each reload a distinct URL, so a saved edit is actually re-read. It is
+ * `<mtime>-<counter>`, not the mtime alone: on a coarse-mtime filesystem (1s
+ * granularity) two quick saves can share an mtime, and the bare mtime would then
+ * hand back the cached first version — the very bug this exists to prevent. The
+ * counter guarantees a fresh URL every call. (Node's ESM registry has no eviction,
+ * so these entries accumulate for the life of the process; a watch session is
+ * interactive and short-lived, so that is an accepted trade.)
  */
+let reloadSeq = 0
 export async function reload(configPath) {
   const { mtimeMs } = await stat(configPath)
-  const mod = await import(`${pathToFileURL(configPath).href}?t=${mtimeMs}`)
+  const mod = await import(`${pathToFileURL(configPath).href}?t=${mtimeMs}-${++reloadSeq}`)
   return normalise(mod.default, configPath)
 }
 
-/** Every composed PNG under the preview dir, grouped by device folder. */
-export async function listFrames(previewDir) {
+/**
+ * Every composed PNG under the preview dir, grouped by the folder it sits in.
+ *
+ * Recursive, because the folder depth depends on the config: a plain deck writes
+ * `<device>/NN.png`, but a variant config writes `<variant>/<device>/NN.png`. Each
+ * group is labelled by its path relative to the preview root (`6.9` or
+ * `A-default/6.9`), so the page shows variant decks side by side exactly as they
+ * land on disk.
+ */
+export async function listFrames(previewDir, dir = previewDir) {
   const out = []
-  let devices
+  let entries
   try {
-    devices = await readdir(previewDir, { withFileTypes: true })
+    entries = await readdir(dir, { withFileTypes: true })
   } catch {
     return out
   }
-  for (const d of devices) {
-    if (!d.isDirectory()) continue
-    const files = (await readdir(join(previewDir, d.name)))
-      .filter((f) => extname(f) === '.png')
-      .sort()
-    if (files.length) out.push({ device: d.name, files })
+  const files = entries.filter((e) => e.isFile() && extname(e.name) === '.png').map((e) => e.name).sort()
+  if (files.length) out.push({ device: relative(previewDir, dir) || '.', files })
+  for (const e of entries.filter((e) => e.isDirectory())) {
+    out.push(...(await listFrames(previewDir, join(dir, e.name))))
   }
-  return out
+  return out.sort((a, b) => a.device.localeCompare(b.device))
 }
 
 /**
@@ -88,19 +99,41 @@ export async function serveWatch({ config, configPath, browser, rawDir, previewD
   const clients = new Set() // open SSE responses
   let state = { at: 0, error: null } // last compose outcome, surfaced to the page
 
+  const bump = (error) => {
+    state = { at: state.at + 1, error }
+    // A client can be half-closed before its `close` event has fired, so a write
+    // here can throw; drop it rather than crash the whole preview.
+    for (const res of clients) {
+      try {
+        res.write(`data: ${state.at}\n\n`)
+      } catch {
+        clients.delete(res)
+      }
+    }
+  }
+
   // Recompose the whole deck from the current config into previewDir. Never
   // throws: a bad config (or a device whose raw was never captured) becomes an
   // on-page error instead of a dead server, because the whole point is to edit
   // toward a working config while watching.
+  //
+  // It composes through variantJobs — the SAME expansion the headless run uses —
+  // so a variant config previews into `<variant>/<device>/…`, matching CI folder
+  // for folder. previewDir is cleared first so a renamed or removed variant does
+  // not leave a stale deck behind. The signal is sent only after all frames are on
+  // disk, so a client never lists a half-written recompose.
   async function recompose(current) {
     try {
       const { chosen } = resolveDevices(current.devices)
-      await compose({ browser, config: current, devices: chosen, fontCss: await fontCss(current), rawDir, outDir: previewDir })
-      state = { at: state.at + 1, error: null }
+      const css = await fontCss(current)
+      await rm(previewDir, { recursive: true, force: true })
+      for (const job of variantJobs(current, previewDir)) {
+        await compose({ browser, config: job.config, devices: chosen, fontCss: css, rawDir, outDir: job.outDir })
+      }
+      bump(null)
     } catch (e) {
-      state = { at: state.at + 1, error: e instanceof ConfigError ? e.message : (e?.message ?? String(e)) }
+      bump(e instanceof ConfigError ? e.message : (e?.message ?? String(e)))
     }
-    for (const res of clients) res.write(`data: ${state.at}\n\n`)
   }
 
   await recompose(config)
@@ -151,30 +184,26 @@ export async function serveWatch({ config, configPath, browser, rawDir, previewD
     res.writeHead(404).end()
   })
 
-  // Watch the config file. Editors save via atomic rename as often as in-place
-  // writes, so a single fs.watch can miss events — debounce and re-stat rather
-  // than trusting the event. Recompose reloads the config itself.
   let timer = null
   const onChange = () => {
     clearTimeout(timer)
     timer = setTimeout(async () => {
       try {
-        const next = await reload(configPath)
-        await recompose(next)
+        await recompose(await reload(configPath))
       } catch (e) {
-        state = { at: state.at + 1, error: e instanceof ConfigError ? e.message : (e?.message ?? String(e)) }
-        for (const res of clients) res.write(`data: ${state.at}\n\n`)
+        bump(e instanceof ConfigError ? e.message : (e?.message ?? String(e)))
       }
     }, 120)
   }
-  try {
-    fsWatch(configPath, onChange)
-  } catch {
-    // Some platforms cannot watch a single file; fall back to watching its dir.
-    fsWatch(resolve(configPath, '..'), (_e, name) => {
-      if (name && configPath.endsWith(name)) onChange()
-    })
-  }
+  // Watch the DIRECTORY, not the file. Most editors save by writing a temp file
+  // and renaming it over the target — which replaces the inode, and a watch bound
+  // to the original file (inotify/FSEvents) then fires nothing ever again. A watch
+  // on the containing directory survives that: the rename shows up as an event for
+  // the config's basename, and we debounce + re-read on it.
+  const name = basename(configPath)
+  fsWatch(resolve(configPath, '..'), (_e, changed) => {
+    if (!changed || changed === name) onChange()
+  })
 
   // Take the asked-for port, or the next free one — a preview server losing to
   // whatever already holds 4600 should step aside, not abort the whole session.

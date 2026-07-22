@@ -320,6 +320,19 @@ export function applyVariant(config, variant) {
   }
 }
 
+/**
+ * The compose jobs a config expands to: one deck straight into `outDir`, or — when
+ * the config declares `variants` — one repackaged deck per variant into
+ * `outDir/<name>/`. The ONE definition of this, shared by the headless run and the
+ * live preview, so the two cannot drift: a variant config previews exactly what CI
+ * ships, folders and all.
+ */
+export function variantJobs(config, outDir) {
+  return config.variants?.length
+    ? config.variants.map((v) => ({ config: applyVariant(config, v), outDir: resolve(outDir, v.name), label: v.name }))
+    : [{ config, outDir, label: null }]
+}
+
 export async function compose({ browser, config, devices, fontCss, rawDir, outDir }) {
   const frame = config.frame ?? {}
   const bridges = config.bridges ?? {}

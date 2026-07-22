@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { PNG } from 'pngjs'
-import { frameHtml, elementsHtml, bridgeContexts, applyVariant } from '../src/compose.mjs'
+import { frameHtml, elementsHtml, bridgeContexts, applyVariant, variantJobs } from '../src/compose.mjs'
 import { thumbnailLegibility, THUMBNAIL_MIN } from '../src/verify.mjs'
 import { layoutPlan, LAYOUTS, isTablet, isAndroid } from '../src/layouts.mjs'
 import { resolveGrounds, renderHeadline, contrastRatio, THEMES, DEFAULT_GROUNDS } from '../src/theme.mjs'
@@ -286,6 +286,23 @@ test('a variant repackages the deck — theme over the whole, copy per slide', (
   // The base is not mutated.
   assert.equal(base.slides[0].headline, 'One')
   assert.equal(base.frame.theme, 'clean-light')
+})
+
+test('variantJobs expands a config the same way headless and preview both consume', () => {
+  const base = { outDir: '/out', slides: [{ screen: 'a', headline: 'One' }] }
+  // No variants: one job, straight into outDir — the byte-identical single deck.
+  const plain = variantJobs(base, '/out')
+  assert.equal(plain.length, 1)
+  assert.equal(plain[0].outDir, '/out')
+  assert.equal(plain[0].label, null)
+  assert.equal(plain[0].config, base, 'the config passes through untouched')
+
+  // With variants: one job each, into outDir/<name>, config repackaged.
+  const withV = { ...base, variants: [{ name: 'A' }, { name: 'B', frame: { theme: 'ocean-fresh' } }] }
+  const jobs = variantJobs(withV, '/preview')
+  assert.deepEqual(jobs.map((j) => j.label), ['A', 'B'])
+  assert.deepEqual(jobs.map((j) => j.outDir), ['/preview/A', '/preview/B'])
+  assert.equal(jobs[1].config.frame.theme, 'ocean-fresh', 'the variant frame is applied')
 })
 
 test('a variant override matches the AUTHORED slide index after --screen narrows the deck', () => {

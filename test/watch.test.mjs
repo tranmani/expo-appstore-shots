@@ -65,3 +65,20 @@ test('listFrames groups PNGs by device folder, sorted, ignoring non-PNGs', async
 test('listFrames on a missing dir is empty, not a throw', async () => {
   assert.deepEqual(await listFrames(join(tmpdir(), 'shots-nope-does-not-exist')), [])
 })
+
+test('listFrames recurses into variant folders and labels them by path', async () => {
+  // A variant config writes <variant>/<device>/NN.png — one level deeper than a
+  // plain deck. The group label is the path relative to the preview root.
+  const dir = await mkdtemp(join(tmpdir(), 'shots-variants-'))
+  try {
+    await mkdir(join(dir, 'A-default', '6.9'), { recursive: true })
+    await mkdir(join(dir, 'B-ocean', '6.9'), { recursive: true })
+    await writeFile(join(dir, 'A-default', '6.9', '01-a.png'), '')
+    await writeFile(join(dir, 'B-ocean', '6.9', '01-a.png'), '')
+
+    const labels = (await listFrames(dir)).map((g) => g.device)
+    assert.deepEqual(labels, ['A-default/6.9', 'B-ocean/6.9'], 'each variant deck listed under its own path')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

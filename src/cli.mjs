@@ -28,7 +28,7 @@ import { basename, dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { bundle } from './build.mjs'
 import { capture } from './capture.mjs'
-import { compose, applyVariant } from './compose.mjs'
+import { compose, variantJobs } from './compose.mjs'
 import { serveWatch } from './watch.mjs'
 import { applyFilters, flagValues } from './args.mjs'
 import { ConfigError, normalise } from './config.mjs'
@@ -497,10 +497,9 @@ async function shoot() {
 
       // A/B variants share the raws (a variant only repackages), so they compose
       // into their own folders off one capture. No variants = the deck straight
-      // into outDir, exactly as before.
-      const jobs = config.variants?.length
-        ? config.variants.map((v) => ({ config: applyVariant(config, v), outDir: resolve(config.outDir, v.name), label: v.name }))
-        : [{ config, outDir: config.outDir, label: null }]
+      // into outDir, exactly as before. Shared with the live preview via
+      // variantJobs, so `watch` shows exactly what this run ships.
+      const jobs = variantJobs(config, config.outDir)
 
       step(config.variants?.length ? `composing ${jobs.length} variant(s)` : 'composing store frames')
       let total = 0
