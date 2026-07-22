@@ -41,14 +41,14 @@ const MIME = { '.png': 'image/png', '.html': 'text/html; charset=utf-8', '.js': 
  * mtime (not a counter) means an unchanged file re-uses the cache, and it is
  * stable across a resume.
  */
-async function reload(configPath) {
+export async function reload(configPath) {
   const { mtimeMs } = await stat(configPath)
   const mod = await import(`${pathToFileURL(configPath).href}?t=${mtimeMs}`)
   return normalise(mod.default, configPath)
 }
 
 /** Every composed PNG under the preview dir, grouped by device folder. */
-async function listFrames(previewDir) {
+export async function listFrames(previewDir) {
   const out = []
   let devices
   try {
@@ -176,9 +176,17 @@ export async function serveWatch({ config, configPath, browser, rawDir, previewD
     })
   }
 
+  // Take the asked-for port, or the next free one — a preview server losing to
+  // whatever already holds 4600 should step aside, not abort the whole session.
   await new Promise((ok, no) => {
-    server.on('error', no)
-    server.listen(port, () => ok())
+    let attempt = port
+    const tryListen = () => server.listen(attempt)
+    server.on('listening', ok)
+    server.on('error', (e) => {
+      if (e.code === 'EADDRINUSE' && attempt < port + 20) server.listen(++attempt)
+      else no(e)
+    })
+    tryListen()
   })
   const address = `http://localhost:${server.address().port}`
   onReady?.(address)

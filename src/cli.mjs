@@ -11,6 +11,10 @@
  *   npx expo-appstore-shots graphics      the Play icon, feature graphic and
  *                                         marketing icon — the listing art that
  *                                         is not a screenshot
+ *   npx expo-appstore-shots preview       app-preview videos (real screens in
+ *                                         motion), encoded to the store spec
+ *   npx expo-appstore-shots watch         live preview: shoot once, then
+ *                                         recompose in the browser on every save
  *
  * Every run ends with what is wrong with the pictures: clipped text, dead space,
  * content under the chrome, fixtures nobody asked for. A clean run is not a
@@ -25,7 +29,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { bundle } from './build.mjs'
 import { capture } from './capture.mjs'
 import { compose, applyVariant } from './compose.mjs'
-import { applyFilters } from './args.mjs'
+import { serveWatch } from './watch.mjs'
+import { applyFilters, flagValues } from './args.mjs'
 import { ConfigError, normalise } from './config.mjs'
 import { resolveDevices } from './devices.mjs'
 import { renderGraphics } from './graphics.mjs'
@@ -50,6 +55,7 @@ function fail(msg) {
 if (args[0] === 'init') await init()
 else if (args[0] === 'graphics') await graphics()
 else if (args[0] === 'preview') await preview()
+else if (args[0] === 'watch') await watchLive()
 else await shoot()
 
 /**
@@ -314,6 +320,85 @@ async function preview() {
     await browser.close()
     server.close()
   }
+}
+
+/**
+ * The live preview loop: shoot the raws once, then compose-on-save.
+ *
+ * It borrows the shoot path's spine — bundle, mock backend, browser, capture — up
+ * to the raw screens, then hands those to a small server that recomposes the deck
+ * every time `shots.config.mjs` changes and shows the result in a browser. The
+ * screens are captured once; the caption/theme/layout you are actually iterating
+ * on recompose in a second. It never returns, so — unlike the other commands —
+ * the browser and backend stay up for the life of the process.
+ */
+async function watchLive() {
+  let config = await loadConfig()
+  const configPath = resolve(cwd, args.find((a) => a.endsWith('.mjs')) ?? 'shots.config.mjs')
+  let rendered
+  try {
+    config = applyFilters(config, args)
+    ;({ rendered } = resolveDevices(config.devices))
+  } catch (e) {
+    if (e instanceof ConfigError) fail(e.message)
+    throw e
+  }
+  for (const w of config.warnings ?? []) console.warn(`  ! ${w}`)
+
+  const fixtures = await import(pathToFileURL(config.api.fixtures).href)
+  const wanted = config.apiPort
+  try {
+    config.apiPort = await freePort(wanted, { explicit: config.apiPortExplicit })
+  } catch (e) {
+    fail(e.message)
+  }
+
+  step('bundling the app for the browser')
+  const built = await bundle(config)
+  for (const w of built.warnings ?? []) console.warn(`  ! ${w}`)
+
+  step(`serving the mock backend on :${config.apiPort}`)
+  const server = await serve({
+    port: config.apiPort,
+    dist: config.workDir,
+    fixtures: fixtures.default ?? fixtures,
+  }).catch((e) => fail(e.message))
+
+  const browser = await chromium.launch(
+    process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {},
+  )
+
+  // Shoot the raws once. From here the app is frozen; only the config recomposes.
+  step(`shooting ${config.screens.length} screen(s) once`)
+  const { problems } = await capture({
+    browser,
+    config,
+    devices: rendered,
+    port: config.apiPort,
+    rawDir: resolve(config.workDir, 'raw'),
+  })
+  for (const p of problems) console.warn(`  ✗ ${p}`)
+
+  // Tidy up on Ctrl-C — the browser and backend outlive the shoot on purpose.
+  const shutdown = async () => {
+    await browser.close().catch(() => {})
+    server.close()
+    process.exit(0)
+  }
+  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', shutdown)
+
+  step('live preview — edit shots.config.mjs and save to recompose')
+  await serveWatch({
+    config,
+    configPath,
+    browser,
+    rawDir: resolve(config.workDir, 'raw'),
+    previewDir: resolve(config.workDir, 'preview'),
+    fontCss,
+    port: Number(flagValues(args, '--port')[0]) || 4600,
+    onReady: (url) => console.log(`\n  open ${url}\n`),
+  })
 }
 
 async function shoot() {

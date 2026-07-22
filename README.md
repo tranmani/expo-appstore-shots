@@ -48,6 +48,27 @@ exact App Store spec — H.264, yuv420p, 15–30s, 30fps, portrait device resolu
 it doubles as a YouTube promo video for Google Play (Play takes a YouTube link,
 not an upload). Nothing to install: the encoder ships with the tool, like Chromium.
 
+## Live preview
+
+Iterating on captions, themes, and layouts one full run at a time is slow. `watch`
+shoots the app **once**, then recomposes the deck every time you save the config —
+so you edit `shots.config.mjs`, glance at the browser, and see the frames a second
+later:
+
+```bash
+npx expo-appstore-shots watch          # → open http://localhost:4600
+npx expo-appstore-shots watch --port 5000 --screen home
+```
+
+The screens are frozen at the first capture (changing *which* screens are shot, or
+the app code, still wants a restart — the page says so). Everything downstream —
+caption copy, emphasis, theme, layout, elements, grounds — is live.
+
+Crucially, this is **not** a second, drifting source of truth. The preview calls
+the exact same compositor the headless run does, so a frame you nudge toward in the
+browser is byte-for-byte the frame CI will render from the committed config. Config
+stays the source of truth; the browser is just a faster way to look at it.
+
 ## Store graphics
 
 The stores want more than screens. Play will not publish without a **512×512 icon**
