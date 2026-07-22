@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
-import { frameHtml, elementsHtml } from '../src/compose.mjs'
+import { frameHtml, elementsHtml, bridgeContexts } from '../src/compose.mjs'
 import { layoutPlan, LAYOUTS, isTablet, isAndroid } from '../src/layouts.mjs'
 import { resolveGrounds, renderHeadline, contrastRatio, THEMES, DEFAULT_GROUNDS } from '../src/theme.mjs'
 import { normalise, ConfigError } from '../src/config.mjs'
@@ -241,6 +241,27 @@ test('elements composite over the ground — chip, accents, text, image', () => 
   assert.equal(elementsHtml([], { W: 1290, H: 2796, ground: g }), '', 'no elements → nothing')
 })
 
+test('bridgeContexts groups only ADJACENT slides sharing an id', () => {
+  const c = bridgeContexts([{ bridge: 'g' }, { bridge: 'g' }, {}, { bridge: 'x' }, { bridge: 'g' }])
+  assert.deepEqual(c[0], { id: 'g', n: 2, i: 0 })
+  assert.deepEqual(c[1], { id: 'g', n: 2, i: 1 })
+  assert.equal(c[2], null, 'a slide with no bridge is not in a group')
+  assert.deepEqual(c[3], { id: 'x', n: 1, i: 0 }, 'a lone bridge is n:1 (it cannot bridge)')
+  assert.deepEqual(c[4], { id: 'g', n: 1, i: 0 }, 'the same id, but not adjacent, is a separate group')
+})
+
+test('a bridge element crosses the seam — same element, offset per column', () => {
+  const els = [{ type: 'sparkle', x: 0.5, y: 0.3 }] // the seam of a 2-wide group
+  const a = frameHtml({ slide: { screen: 'a', headline: 'A' }, device: DEVICE, raw, frame: {}, fontCss: '', bridge: { n: 2, i: 0, elements: els } })
+  const b = frameHtml({ slide: { screen: 'b', headline: 'B' }, device: DEVICE, raw, frame: {}, fontCss: '', bridge: { n: 2, i: 1, elements: els } })
+  // Column 0: the seam sits at the RIGHT edge (x = W). Column 1: at the LEFT edge (x = 0).
+  assert.match(a, /left:1290px;/, 'in the first slide the seam element is at the right edge')
+  assert.match(b, /left:0px;/, 'in the second slide the same element is at the left edge')
+  // A slide not in a group draws no bridge element.
+  const solo = html({ screen: 'a', headline: 'A' })
+  assert.ok(!solo.includes('M12 0'), 'no bridge, no sparkle')
+})
+
 test('an eyebrow rides above the headline, in the accent, opt-in', () => {
   const out = html({ screen: 'x', headline: 'Big', eyebrow: 'new in 2.0', ground: 'light' })
   assert.match(out, /class="eyebrow">new in 2\.0</)
@@ -292,6 +313,43 @@ test('the legibility gate warns a washed-out ground, and never a good one', () =
 test('an element of unknown type fails at config time', () => {
   assert.throws(
     () => normalise({ ...baseConfig, slides: [{ screen: 'a', elements: [{ type: 'nope' }] }] }, CONFIG),
+    /unknown type/,
+  )
+})
+
+test('a bridge is warned when it cannot bridge — non-adjacent, or empty', () => {
+  // Adjacent + elements: no warning.
+  const good = normalise(
+    {
+      ...baseConfig,
+      slides: [{ screen: 'a', bridge: 'g' }, { screen: 'b', bridge: 'g' }],
+      bridges: { g: { elements: [{ type: 'sparkle', x: 0.5 }] } },
+    },
+    CONFIG,
+  )
+  assert.deepEqual(good.warnings.filter((w) => /bridge/.test(w)), [])
+
+  // Non-adjacent (a screen between them): can't cross a seam that isn't there.
+  const apart = normalise(
+    { ...baseConfig, slides: [{ screen: 'a', bridge: 'g' }, { screen: 'b' }, { screen: 'a', bridge: 'g' }] },
+    CONFIG,
+  )
+  assert.equal(apart.warnings.filter((w) => /never on two ADJACENT/.test(w)).length, 1)
+
+  // Adjacent but no elements defined: nothing to cross.
+  const empty = normalise(
+    { ...baseConfig, slides: [{ screen: 'a', bridge: 'g' }, { screen: 'b', bridge: 'g' }] },
+    CONFIG,
+  )
+  assert.equal(empty.warnings.filter((w) => /nothing crosses the seam/.test(w)).length, 1)
+
+  // A mistyped bridge element type fails hard.
+  assert.throws(
+    () =>
+      normalise(
+        { ...baseConfig, slides: [{ screen: 'a', bridge: 'g' }], bridges: { g: { elements: [{ type: 'x' }] } } },
+        CONFIG,
+      ),
     /unknown type/,
   )
 })

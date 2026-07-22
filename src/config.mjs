@@ -171,6 +171,50 @@ export function normalise(config, configPath) {
     prevLayout = slide.layout
   }
 
+  // Connected canvas: a bridge element crosses the seam between adjacent slides.
+  // Three ways to get it wrong, each caught here rather than composed into a deck
+  // where the bridge silently does nothing.
+  const bridges = config.bridges ?? {}
+  for (const [id, b] of Object.entries(bridges)) {
+    for (const el of b.elements ?? []) {
+      if (!ELEMENT_TYPES.includes(el?.type)) {
+        throw new ConfigError(
+          `bridge "${id}" has an element of unknown type "${el?.type}" (have: ${ELEMENT_TYPES.join(', ')})`,
+        )
+      }
+    }
+  }
+  // The runs of consecutive slides that share a bridge id.
+  const runs = []
+  for (let s = 0; s < out.slides.length; ) {
+    const id = out.slides[s].bridge
+    if (!id) {
+      s++
+      continue
+    }
+    let e = s
+    while (e + 1 < out.slides.length && out.slides[e + 1].bridge === id) e++
+    runs.push({ id, n: e - s + 1 })
+    s = e + 1
+  }
+  const longestRun = {}
+  for (const r of runs) longestRun[r.id] = Math.max(longestRun[r.id] ?? 0, r.n)
+  for (const [id, n] of Object.entries(longestRun)) {
+    if (n < 2) {
+      out.warnings.push(
+        `bridge "${id}" is never on two ADJACENT slides — a bridge crosses the seam between neighbours, ` +
+          `so the slides sharing it must sit next to each other.`,
+      )
+    }
+  }
+  for (const r of runs) {
+    if (r.n >= 2 && !bridges[r.id]?.elements?.length) {
+      out.warnings.push(
+        `bridge "${r.id}" connects ${r.n} slides but config.bridges["${r.id}"] has no elements — nothing crosses the seam.`,
+      )
+    }
+  }
+
   // The legibility gate — the thumbnail test as a number. A headline reads at a
   // glance only if its ink stands off its ground; below 3:1 it looks fine at full
   // size and disappears in the store's search results. Checked once per ground

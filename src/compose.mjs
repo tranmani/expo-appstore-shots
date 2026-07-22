@@ -96,12 +96,19 @@ function accentSvg(kind, color, size) {
  * Entirely opt-in: an empty/absent list renders nothing, which is what keeps the
  * default frame byte-identical.
  */
-export function elementsHtml(elements, { W, H, ground }) {
+export function elementsHtml(elements, { W, H, ground, bridge }) {
   if (!elements?.length) return ''
   const px = (frac) => Math.round(frac * W)
   return elements
     .map((el) => {
-      const left = Math.round((el.x ?? 0.5) * W)
+      // A bridge element is placed in the GROUP's coordinate space — `x` is a
+      // fraction of the whole N-wide group, not of one frame — then shifted into
+      // this column. The frame's `overflow: hidden` clips whatever runs past the
+      // edge, so the same element, drawn in every column of the group, lines up
+      // across the seams when the exports sit side by side on the store page.
+      const left = bridge
+        ? Math.round((el.x ?? 0.5) * bridge.n * W - bridge.i * W)
+        : Math.round((el.x ?? 0.5) * W)
       const top = Math.round((el.y ?? 0.5) * H)
       const rot = el.rotation ? ` rotate(${el.rotation}deg)` : ''
       const base = `position:absolute; left:${left}px; top:${top}px; z-index:${el.z ?? 5}; transform:translate(-50%,-50%)${rot}; transform-origin:center;`
@@ -123,7 +130,7 @@ export function elementsHtml(elements, { W, H, ground }) {
     .join('\n')
 }
 
-export function frameHtml({ slide, device, raw, rawSecondary, frame, fontCss }) {
+export function frameHtml({ slide, device, raw, rawSecondary, frame, fontCss, bridge }) {
   const [W, H] = device.size
   const ground = resolveGrounds(frame)[slide.ground ?? 'light']
 
@@ -185,7 +192,12 @@ export function frameHtml({ slide, device, raw, rawSecondary, frame, fontCss }) 
     ? `
   .eyebrow { font-size: ${Math.round(L.sub * 0.82)}px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: ${ground.accent}; margin-bottom: ${Math.round(L.headline * 0.2)}px; }`
     : ''
-  const elements = slide.elements?.length ? `\n${elementsHtml(slide.elements, { W, H, ground })}` : ''
+  // Per-slide accents, plus any bridge elements the group carries — the latter
+  // drawn in group-canvas space so they cross the seam.
+  const slideEls = slide.elements?.length ? elementsHtml(slide.elements, { W, H, ground }) : ''
+  const bridgeEls = bridge?.elements?.length ? elementsHtml(bridge.elements, { W, H, ground, bridge }) : ''
+  const combined = [slideEls, bridgeEls].filter(Boolean).join('\n')
+  const elements = combined ? `\n${combined}` : ''
 
   // Two phones layered — the back one first (behind), then the front. Falls back
   // to the single centred device the moment the second screenshot is missing, so
@@ -259,8 +271,37 @@ ${deviceHtml}${elements}
 `
 }
 
+/**
+ * Which connected group each slide belongs to, and where in it.
+ *
+ * A run of consecutive slides sharing a `bridge` id is one group: `n` slides
+ * wide, this one at index `i`. A group's bridge elements are drawn in every one
+ * of its columns, offset per `i`, so they line up across the seams. A `bridge`
+ * that names only itself (or lands non-adjacent) simply gets `n: 1` — no bridge,
+ * and the config warns.
+ */
+export function bridgeContexts(slides) {
+  const ctx = new Array(slides.length).fill(null)
+  let s = 0
+  while (s < slides.length) {
+    const id = slides[s].bridge
+    if (!id) {
+      s++
+      continue
+    }
+    let e = s
+    while (e + 1 < slides.length && slides[e + 1].bridge === id) e++
+    const n = e - s + 1
+    for (let k = s; k <= e; k++) ctx[k] = { id, n, i: k - s }
+    s = e + 1
+  }
+  return ctx
+}
+
 export async function compose({ browser, config, devices, fontCss, rawDir, outDir }) {
   const frame = config.frame ?? {}
+  const bridges = config.bridges ?? {}
+  const groups = bridgeContexts(config.slides)
   const written = []
 
   for (const device of devices) {
@@ -275,8 +316,12 @@ export async function compose({ browser, config, devices, fontCss, rawDir, outDi
       const rawSecondary = slide.screenSecondary
         ? await readFile(resolve(rawDir, `${source}-${slide.screenSecondary}.png`))
         : null
+      // The connected-group context, if this slide is in one, with the group's
+      // bridge elements resolved from `config.bridges`.
+      const g = groups[i]
+      const bridge = g && g.n > 1 ? { n: g.n, i: g.i, elements: bridges[g.id]?.elements } : null
       const page = await browser.newPage({ viewport: { width: device.size[0], height: device.size[1] } })
-      await page.setContent(frameHtml({ slide, device, raw, rawSecondary, frame, fontCss }))
+      await page.setContent(frameHtml({ slide, device, raw, rawSecondary, frame, fontCss, bridge }))
       await page.evaluate(() => document.fonts.ready)
 
       const shot = await page.screenshot({ type: 'png' })
