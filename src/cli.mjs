@@ -18,6 +18,8 @@
  *   npx expo-appstore-shots --zip         …and bundle the frames into one
  *                                         store-ready appstore.zip
  *   npx expo-appstore-shots pack          zip already-composed frames, no reshoot
+ *   npx expo-appstore-shots copy          draft on-doctrine headlines from the
+ *                                         real screens (needs ANTHROPIC_API_KEY)
  *
  * Every run ends with what is wrong with the pictures: clipped text, dead space,
  * content under the chrome, fixtures nobody asked for. A clean run is not a
@@ -34,6 +36,7 @@ import { capture } from './capture.mjs'
 import { compose, variantJobs } from './compose.mjs'
 import { serveWatch } from './watch.mjs'
 import { pack } from './pack.mjs'
+import { draftCaptions, anthropicProvider } from './copy.mjs'
 import { applyFilters, flagValues } from './args.mjs'
 import { ConfigError, normalise } from './config.mjs'
 import { resolveDevices } from './devices.mjs'
@@ -61,6 +64,7 @@ else if (args[0] === 'graphics') await graphics()
 else if (args[0] === 'preview') await preview()
 else if (args[0] === 'watch') await watchLive()
 else if (args[0] === 'pack') await packCmd()
+else if (args[0] === 'copy') await copyCmd()
 else await shoot()
 
 /**
@@ -422,6 +426,49 @@ async function packCmd() {
   if (!names.length) fail(`no frames in ${config.outDir}/ — run a shoot first`)
   console.log(`\n${names.length} frame(s) → ${zipPath}`)
   for (const n of names) console.log(`  ${n}`)
+}
+
+/**
+ * Draft caption copy from the real screens — the one command that reads the
+ * frames and writes English. It grounds each draft in the actual screenshot (so a
+ * headline cannot claim what is not on screen), applies the narrative arc by slide
+ * position, scores every option against the iron rules, and prints them. It never
+ * edits the config: the drafts are yours to fold in. Needs ANTHROPIC_API_KEY —
+ * the key is yours, nothing is bundled.
+ */
+async function copyCmd() {
+  const config = await loadConfig()
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) fail('set ANTHROPIC_API_KEY to draft copy — the key is yours, nothing is bundled')
+
+  const { rendered } = resolveDevices(config.devices)
+  const source = rendered[0]?.id
+  const rawDir = resolve(config.workDir, 'raw')
+  const app = { name: config.graphics?.wordmark, tagline: config.graphics?.tagline }
+
+  // Attach each slide's real screenshot if it has been shot; the draft is better
+  // grounded with it, and still works without (text-only) if you have not run yet.
+  const slides = []
+  let withImage = 0
+  for (const slide of config.slides) {
+    let image
+    try {
+      image = await readFile(resolve(rawDir, `${source}-${slide.screen}.png`))
+      withImage++
+    } catch {}
+    slides.push({ ...slide, id: slide.screen, image })
+  }
+  if (!withImage) console.warn('  ! no shot screens found — drafting from metadata only. Run a shoot first for grounded copy.')
+
+  step(`drafting copy for ${slides.length} slide(s)`)
+  const drafted = await draftCaptions({ provider: anthropicProvider({ apiKey }), app, slides })
+  for (const d of drafted) {
+    console.log(`\n${d.screen} — the ${d.role} slide:`)
+    for (const o of d.options) {
+      console.log(o.ok ? `  ✓ ${o.text}` : `  ✗ ${o.text}  (${o.issues.join('; ')})`)
+    }
+  }
+  console.log('\nDrafts only. Paste the ones you like into shots.config.mjs — nothing here is final.')
 }
 
 async function shoot() {

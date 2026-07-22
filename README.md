@@ -69,6 +69,28 @@ the exact same compositor the headless run does, so a frame you nudge toward in 
 browser is byte-for-byte the frame CI will render from the committed config. Config
 stays the source of truth; the browser is just a faster way to look at it.
 
+## Drafting the copy
+
+We already render the real screens and hold the app's metadata, so we can draft
+the headlines — not finalise them. `copy` sends each screenshot to the model,
+applies the narrative arc by slide position, scores every option against the iron
+rules (one idea, 3–5 words, no "and", legible at thumbnail size), and prints them:
+
+```bash
+ANTHROPIC_API_KEY=… npx expo-appstore-shots copy
+```
+
+```
+nearby — the hero slide:
+  ✓ Only when you are there
+  ✓ Chat the platform beneath you
+  ✗ Find rooms and chat and meet people nearby  (two ideas; too long)
+```
+
+It grounds each draft in the actual screenshot, so a headline can't claim what the
+screen doesn't show (App Review rejects that). The key is yours — nothing is
+bundled — and it never edits the config: the drafts are suggestions you fold in.
+
 ## One bundle to upload
 
 `--zip` (or the `pack` command on frames you already have) files every composed
