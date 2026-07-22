@@ -1,0 +1,72 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: Golden; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1290px; height: 2796px; overflow: hidden;
+    background: #17513F;
+    background-image: radial-gradient(#23614D 1.8428571428571427px, transparent 1.8428571428571427px);
+    background-size: 30px 30px;
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .caption { position: absolute; left: 84px; right: 84px; top: 145px; }
+  h1 {
+    font-size: 84px; line-height: 1.16; letter-spacing: -0.02em;
+    font-weight: 800; color: #F5F3EE; text-wrap: balance;
+  }
+  p {
+    margin-top: 24px;
+    font-size: 40px; line-height: 1.38; font-weight: 400; color: #9FC2B3;
+    max-width: 1055px;
+  }
+  .device {
+    position: absolute; top: 621px; left: 50%; transform: translateX(-50%);
+    width: 1006px;
+    padding: 13px;
+    border-radius: 68px;
+    background: #111517;
+    box-shadow: 0 25px 70px rgba(0,0,0,0.28);
+  }
+  .screen { position: relative; border-radius: 55px; overflow: hidden; display: block; }
+  .screen img { width: 980px; display: block; }
+  /* The status bar: react-native-web has none, so the app leaves the safe-area
+     strip empty and it is drawn back in here, at the device's own scale. */
+  .sb {
+    position: absolute; left: 0; right: 0; top: 0;
+    height: 141px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 46px;
+    padding-top: 14px;
+    font-size: 39px; font-weight: 600; color: #181A17;
+    letter-spacing: 0.01em;
+  }
+</style>
+<div class="caption">
+  <h1>Every station has a room.</h1>
+  <p>Departures, delays, and the people standing right next to you.</p>
+</div>
+<div class="device">
+  <div class="screen">
+    <img src="data:image/png;base64,R09MREVOLVJBVy1QTEFDRUhPTERFUg==">
+    <div class="sb">
+      <span>9:41</span>
+      
+    <svg class="sb-icons" width="177.7674418604651" height="31.906976744186046" viewBox="0 0 78 14" fill="none">
+      <g fill="#181A17">
+        <rect x="0" y="8" width="3" height="5" rx="1"/>
+        <rect x="5" y="6" width="3" height="7" rx="1"/>
+        <rect x="10" y="3" width="3" height="10" rx="1"/>
+        <rect x="15" y="0" width="3" height="13" rx="1"/>
+      </g>
+      <path d="M30.5 4.2a9 9 0 0 1 11 0" stroke="#181A17" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+      <path d="M32.8 7.2a5.6 5.6 0 0 1 6.4 0" stroke="#181A17" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+      <circle cx="36" cy="10.6" r="1.6" fill="#181A17"/>
+      <rect x="52" y="1.5" width="21" height="11" rx="3" stroke="#181A17" stroke-width="1.2" fill="none" opacity="0.6"/>
+      <rect x="53.8" y="3.3" width="17.4" height="7.4" rx="1.6" fill="#181A17"/>
+      <path d="M74.6 5.4v3.2a2.2 2.2 0 0 0 0-3.2Z" fill="#181A17" opacity="0.6"/>
+    </svg>
+    </div>
+  </div>
+</div>

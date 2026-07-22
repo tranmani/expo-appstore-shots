@@ -7,6 +7,8 @@
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { LAYOUTS } from './layouts.mjs'
+import { THEMES } from './theme.mjs'
 
 export class ConfigError extends Error {}
 
@@ -91,10 +93,37 @@ export function normalise(config, configPath) {
   // you want to see what the screens look like before writing any copy.
   if (!out.slides.length) out.slides = out.screens.map((s) => ({ screen: s.id }))
 
+  // A named theme has to exist; a mistyped one would otherwise fall silently back
+  // to the default grounds and the whole deck would be off-brand with no warning.
+  if (config.frame?.theme && !THEMES[config.frame.theme]) {
+    throw new ConfigError(
+      `unknown frame.theme "${config.frame.theme}" (have: ${Object.keys(THEMES).join(', ')})`,
+    )
+  }
+
+  let prevLayout
   for (const slide of out.slides) {
     if (!ids.has(slide.screen)) {
       throw new ConfigError(`slide references unknown screen "${slide.screen}"`)
     }
+    // A mistyped layout should fail here with the list, not throw mid-compose
+    // after a browser launch.
+    if (slide.layout && !LAYOUTS.includes(slide.layout)) {
+      throw new ConfigError(
+        `slide "${slide.screen}" has unknown layout "${slide.layout}" (have: ${LAYOUTS.join(', ')})`,
+      )
+    }
+    // Their rule, and ours: never the same composition twice in a row. Only
+    // *explicit* repeats are warned — a deck that never set a layout has not
+    // opted into this and should not be nagged; two slides that both chose
+    // `hero` have, and reading them side by side is one long slide.
+    if (slide.layout && slide.layout === prevLayout) {
+      out.warnings.push(
+        `slides "${slide.screen}" and the one before it both use layout "${slide.layout}" — ` +
+          `adjacent slides should vary (try device-top, device-bottom, hero, no-device) so the deck has rhythm.`,
+      )
+    }
+    prevLayout = slide.layout
   }
 
   return out

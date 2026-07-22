@@ -10,11 +10,8 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { PNG } from 'pngjs'
 import { slideFile } from './config.mjs'
-
-const DEFAULT_GROUNDS = {
-  light: { bg: '#F4F3F0', dot: '#D8D6CE', ink: '#181A17', muted: '#676F6D' },
-  dark: { bg: '#17513F', dot: '#23614D', ink: '#F5F3EE', muted: '#9FC2B3' },
-}
+import { resolveGrounds, renderHeadline, escapeHtml } from './theme.mjs'
+import { layoutPlan } from './layouts.mjs'
 
 /**
  * App Store Connect rejects PNGs with an alpha channel, and Chromium always
@@ -53,10 +50,15 @@ function statusBarSvg(tint, scale) {
     </svg>`
 }
 
-function frameHtml({ slide, device, raw, frame, fontCss }) {
+export function frameHtml({ slide, device, raw, frame, fontCss }) {
   const [W, H] = device.size
-  const ground = { ...DEFAULT_GROUNDS, ...(frame.grounds ?? {}) }[slide.ground ?? 'light']
-  const L = { ...defaults(device), ...(frame.layout?.[device.kind] ?? {}) }
+  const ground = resolveGrounds(frame)[slide.ground ?? 'light']
+
+  // The layout decides where everything sits; a per-device-kind override in the
+  // config still wins on top, exactly as before.
+  const plan = layoutPlan(slide.layout ?? 'standard', device)
+  const L = { ...plan, ...(frame.layout?.[device.kind] ?? {}) }
+  const tilt = Number(slide.tilt ?? L.tilt ?? 0)
 
   // The screen is rendered at the device's own pixel size; on the frame it sits
   // at `deviceWidth`, so everything drawn over it scales by this factor.
@@ -66,6 +68,37 @@ function frameHtml({ slide, device, raw, frame, fontCss }) {
   const dots = frame.dots === false ? '' : `
     background-image: radial-gradient(${ground.dot} ${Math.max(1.5, W / 700)}px, transparent ${Math.max(1.5, W / 700)}px);
     background-size: ${Math.round(W / 43)}px ${Math.round(W / 43)}px;`
+
+  // Where the caption is pinned. `top` is the original behaviour; `bottom` and
+  // `middle` are what the device-top and no-device layouts need. A `bottom`
+  // anchor with no `captionBottom` (only possible via a `frame.layout` override)
+  // falls to a sensible default rather than emitting `bottom: undefinedpx`.
+  const captionBottom = L.captionBottom ?? Math.round(H * 0.06)
+  const captionPos =
+    L.captionAnchor === 'bottom'
+      ? `bottom: ${captionBottom}px;`
+      : L.captionAnchor === 'middle'
+        ? `top: 50%; transform: translateY(-50%);`
+        : `top: ${L.captionTop}px;`
+  // The extras carry their OWN leading space, so when they are empty the caption
+  // and paragraph rules are byte-for-byte what they were before the engine — no
+  // trailing whitespace on the default path.
+  const textAlign = L.captionAlign === 'center' ? ' text-align: center;' : ''
+  const subMargin = L.captionAlign === 'center' ? ' margin-left: auto; margin-right: auto;' : ''
+
+  const deviceTransform = `translateX(-50%)${tilt ? ` rotate(${tilt}deg)` : ''}`
+
+  const deviceHtml = L.deviceShown
+    ? `<div class="device">
+  <div class="screen">
+    <img src="data:image/png;base64,${raw.toString('base64')}">
+    <div class="sb">
+      <span>${escapeHtml(frame.statusBar?.time ?? '9:41')}</span>
+      ${statusBarSvg(statusTint, statusScale)}
+    </div>
+  </div>
+</div>`
+    : ''
 
   return `<!doctype html>
 <meta charset="utf-8">
@@ -78,7 +111,7 @@ ${fontCss}
     font-family: '${frame.fontFamily ?? 'Inter'}', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
-  .caption { position: absolute; left: ${L.margin}px; right: ${L.margin}px; top: ${L.captionTop}px; }
+  .caption { position: absolute; left: ${L.margin}px; right: ${L.margin}px; ${captionPos}${textAlign} }
   h1 {
     font-size: ${L.headline}px; line-height: 1.16; letter-spacing: -0.02em;
     font-weight: ${frame.headlineWeight ?? 800}; color: ${ground.ink}; text-wrap: balance;
@@ -86,10 +119,10 @@ ${fontCss}
   p {
     margin-top: ${Math.round(L.headline * 0.28)}px;
     font-size: ${L.sub}px; line-height: 1.38; font-weight: 400; color: ${ground.muted};
-    max-width: ${Math.round((W - L.margin * 2) * 0.94)}px;
+    max-width: ${Math.round((W - L.margin * 2) * 0.94)}px;${subMargin}
   }
   .device {
-    position: absolute; top: ${L.deviceTop}px; left: 50%; transform: translateX(-50%);
+    position: absolute; top: ${L.deviceTop}px; left: 50%; transform: ${deviceTransform};
     width: ${L.deviceWidth + L.bezel * 2}px;
     padding: ${L.bezel}px;
     border-radius: ${L.radius + L.bezel}px;
@@ -111,42 +144,12 @@ ${fontCss}
   }
 </style>
 <div class="caption">
-  <h1>${escapeHtml(slide.headline ?? '')}</h1>
+  <h1>${renderHeadline(slide.headline ?? '', ground.accent)}</h1>
   ${slide.sub ? `<p>${escapeHtml(slide.sub)}</p>` : ''}
 </div>
-<div class="device">
-  <div class="screen">
-    <img src="data:image/png;base64,${raw.toString('base64')}">
-    <div class="sb">
-      <span>${escapeHtml(frame.statusBar?.time ?? '9:41')}</span>
-      ${statusBarSvg(statusTint, statusScale)}
-    </div>
-  </div>
-</div>
+${deviceHtml}
 `
 }
-
-/**
- * Proportional defaults, so a frame composes itself on any canvas: a phone slot,
- * a 13" iPad slot, or whatever Apple adds next.
- */
-function defaults(device) {
-  const [W, H] = device.size
-  const tablet = device.kind === 'tablet'
-  return {
-    margin: Math.round(W * 0.065),
-    captionTop: Math.round(H * 0.052),
-    headline: Math.round(W * (tablet ? 0.057 : 0.065)),
-    sub: Math.round(W * (tablet ? 0.028 : 0.031)),
-    deviceTop: Math.round(H * (tablet ? 0.255 : 0.222)),
-    deviceWidth: Math.round(W * (tablet ? 0.68 : 0.76)),
-    radius: Math.round(W * (tablet ? 0.021 : 0.043)),
-    bezel: Math.round(W * 0.01),
-  }
-}
-
-const escapeHtml = (s) =>
-  String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
 
 export async function compose({ browser, config, devices, fontCss, rawDir, outDir }) {
   const frame = config.frame ?? {}
