@@ -1,7 +1,7 @@
 {
   "name": "expo-appstore-shots",
   "version": "0.4.1",
-  "description": "Generate App Store screenshots and store graphics from an Expo app's own code — no Mac, no simulator, no mock-ups.",
+  "description": "Generate App Store screenshots and store graphics from an Expo app's own code \u2014 no Mac, no simulator, no mock-ups.",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -35,6 +35,8 @@
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",
     "esbuild": "^0.24.0",
+    "ffmpeg-static": "^5.3.0",
+    "ffprobe-static": "^3.1.0",
     "playwright": "^1.49.0",
     "pngjs": "^7.0.0",
     "react": "19.2.7",

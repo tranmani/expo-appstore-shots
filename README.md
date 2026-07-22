@@ -26,6 +26,28 @@ npx expo-appstore-shots graphics    # → Play icon 512², feature graphic 1024�
                                     #   App Store marketing icon 1024²
 ```
 
+And it records **app-preview videos** — the real screens in motion, the store's
+most underused asset, which a wrap-a-screenshot tool cannot make at all:
+
+```bash
+npx expo-appstore-shots preview     # → appstore/previews/home.mp4, …
+```
+
+```js
+// in shots.config.mjs
+previews: [
+  { id: 'home', screen: 'home' },                      // a ~17s scroll tour
+  { id: 'chat', screen: 'chat', scrollSeconds: 10, hold: 2, device: 'iphone-6.9' },
+],
+```
+
+Each preview loads the real screen, eases through its content on a deterministic
+curve, and captures device-pixel frames that a **bundled ffmpeg** encodes to the
+exact App Store spec — H.264, yuv420p, 15–30s, 30fps, portrait device resolution
+— which the run then verifies with `ffprobe` before trusting the file. Silent, so
+it doubles as a YouTube promo video for Google Play (Play takes a YouTube link,
+not an upload). Nothing to install: the encoder ships with the tool, like Chromium.
+
 ## Store graphics
 
 The stores want more than screens. Play will not publish without a **512×512 icon**

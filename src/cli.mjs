@@ -32,6 +32,8 @@ import { renderGraphics } from './graphics.mjs'
 import { suggest } from './icons.mjs'
 import { scan } from './scan.mjs'
 import { freePort, serve } from './server.mjs'
+import { recordPreviews, probe, ffmpegBin } from './previews.mjs'
+import { resolveDevices as resolveDeviceList } from './devices.mjs'
 import { iconReport, report, unusedFixtures } from './verify.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -47,6 +49,7 @@ function fail(msg) {
 
 if (args[0] === 'init') await init()
 else if (args[0] === 'graphics') await graphics()
+else if (args[0] === 'preview') await preview()
 else await shoot()
 
 /**
@@ -191,6 +194,125 @@ async function loadConfig() {
   } catch (e) {
     if (e instanceof ConfigError) fail(e.message)
     throw e
+  }
+}
+
+/**
+ * App-preview videos: the real screens in motion, encoded to the App Store spec.
+ *
+ * Shares the shoot path's spine — bundle the app, serve the mock backend, launch
+ * the browser — then records and drives each preview instead of photographing it,
+ * and checks every output against the store's requirements before trusting it.
+ */
+async function preview() {
+  const config = await loadConfig()
+  if (!config.previews?.length) {
+    fail('no `previews` in the config. Add e.g. previews: [{ id: "home", screen: "home" }]')
+  }
+
+  for (const w of config.warnings ?? []) console.warn(`  ! ${w}`)
+
+  // Each preview names a device (or defaults to the first configured one). Resolve
+  // the id to a real device, and remember which viewports must actually be rendered.
+  const fallbackDevice = config.devices[0]
+  const previews = config.previews.map((p) => {
+    const id = p.device ?? fallbackDevice
+    const list = resolveDeviceList([id])
+    return { ...p, device: list.chosen[0] }
+  })
+
+  const fixtures = await import(pathToFileURL(config.api.fixtures).href)
+
+  const wanted = config.apiPort
+  try {
+    config.apiPort = await freePort(wanted, { explicit: config.apiPortExplicit })
+  } catch (e) {
+    fail(e.message)
+  }
+  if (config.apiPort !== wanted) {
+    console.warn(`  ! :${wanted} is busy — using :${config.apiPort} instead`)
+  }
+
+  step('bundling the app for the browser')
+  const built = await bundle(config)
+  for (const w of built.warnings ?? []) console.warn(`  ! ${w}`)
+
+  step(`serving the mock backend on :${config.apiPort}`)
+  const server = await serve({
+    port: config.apiPort,
+    dist: config.workDir,
+    fixtures: fixtures.default ?? fixtures,
+  }).catch((e) => fail(e.message))
+
+  const browser = await chromium.launch(
+    process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : {},
+  )
+
+  try {
+    step(`recording ${previews.length} app preview(s) with a bundled ffmpeg`)
+    const { written, problems } = await recordPreviews({
+      browser,
+      config,
+      previews,
+      port: config.apiPort,
+      outDir: config.previewDir,
+      workDir: config.workDir,
+    })
+
+    for (const p of problems) console.warn(`  ✗ ${p}`)
+
+    // A PREVIEW THAT THE STORE WILL REJECT MUST NOT PASS AS DONE.
+    //
+    // The point of running the real app is that the video IS the product — but a
+    // video is only useful if App Store Connect accepts it, and the ways it can
+    // refuse (wrong codec, an odd dimension, over 30 seconds, alpha) are exactly
+    // the ones a person cannot see by watching. So every file is measured against
+    // the spec here, by ffprobe, and a run that produced a non-conforming video
+    // fails loudly rather than handing back an upload that bounces.
+    const ffprobePath = (() => {
+      try {
+        return createRequire(import.meta.url)('ffprobe-static').path
+      } catch {
+        return 'ffprobe'
+      }
+    })()
+
+    const bad = []
+    for (const v of written) {
+      let meta
+      try {
+        meta = await probe(v.file, ffprobePath)
+      } catch {
+        continue // no ffprobe available — skip the check rather than fail the run
+      }
+      const [W, H] = v.deviceSize ?? []
+      const reasons = []
+      if (meta.codec !== 'h264') reasons.push(`codec ${meta.codec} (need h264)`)
+      if (meta.pixFmt !== 'yuv420p') reasons.push(`pixel format ${meta.pixFmt} (need yuv420p)`)
+      if (meta.duration < 15 || meta.duration > 30) reasons.push(`${meta.duration.toFixed(1)}s (need 15–30s)`)
+      if (Math.round(meta.fps) > 30) reasons.push(`${meta.fps}fps (max 30)`)
+      v.meta = meta
+      if (reasons.length) bad.push(`${v.id}: ${reasons.join(', ')}`)
+    }
+
+    console.log(`\n${written.length} preview(s) in ${config.previewDir}/`)
+    for (const v of written) {
+      const m = v.meta
+      console.log(
+        `  ${basename(v.file)}  ${m ? `${m.width}×${m.height}  ${m.duration.toFixed(1)}s  ${Math.round(m.fps)}fps  ${m.codec}` : ''}  ${(v.bytes / 1e6).toFixed(1)} MB`,
+      )
+    }
+
+    if (bad.length) {
+      console.error(`\n${bad.length} preview(s) do not meet the App Store spec:\n  ${bad.join('\n  ')}\n`)
+      await browser.close()
+      server.close()
+      process.exit(1)
+    }
+    console.log(`\nUpload as app previews (App Store), or put on YouTube for a Play promo.`)
+  } finally {
+    await browser.close()
+    server.close()
   }
 }
 

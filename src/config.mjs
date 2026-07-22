@@ -9,6 +9,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LAYOUTS } from './layouts.mjs'
 import { THEMES } from './theme.mjs'
+import { DEVICES } from './devices.mjs'
 
 export class ConfigError extends Error {}
 
@@ -27,6 +28,7 @@ export function normalise(config, configPath) {
     ...config,
     projectRoot: at(config.projectRoot ?? '.'),
     outDir: at(config.outDir ?? 'appstore'),
+    previewDir: at(config.previewDir ?? 'appstore/previews'),
     workDir: at(config.workDir ?? '.shots'),
     apiPort: config.apiPort ?? 8788,
     // Whether the port was *chosen* or merely defaulted. A default may move out
@@ -85,6 +87,21 @@ export function normalise(config, configPath) {
         `screen "${screen.id}" is a tab screen with no title/header: its header lives in ` +
           `(tabs)/_layout.tsx, which is not mounted here, so it will render under the status ` +
           `bar. Add title: "…" (or header: false if the screen draws its own).`,
+      )
+    }
+  }
+
+  // App-preview videos, if any. Each names a screen (which must exist) and,
+  // optionally, a device (which must be one we know) — caught here rather than
+  // after a browser launch and an ffmpeg spawn.
+  for (const p of out.previews ?? []) {
+    if (!p.id) throw new ConfigError('every preview needs an id')
+    if (!ids.has(p.screen)) {
+      throw new ConfigError(`preview "${p.id}" references unknown screen "${p.screen}"`)
+    }
+    if (p.device && !DEVICES[p.device]) {
+      throw new ConfigError(
+        `preview "${p.id}" names unknown device "${p.device}" (have: ${Object.keys(DEVICES).join(', ')})`,
       )
     }
   }
